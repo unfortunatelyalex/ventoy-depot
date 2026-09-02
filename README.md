@@ -27,8 +27,9 @@ To update ISOs in the TUI:
 3. Choose **Update selected**, review the complete plan, then confirm the transfer.
 
 Automatic official resolution currently covers Arch Linux, Ubuntu, Debian, Fedora
-Workstation/Server/KDE, Linux Mint stable editions, EndeavourOS, Omarchy, Manjaro stable,
-Pop!_OS, Vanilla OS and the free Zorin OS editions. A variant without an exact official
+Workstation/Server/KDE, Linux Mint stable editions, EndeavourOS, Omarchy, Pop!_OS,
+Vanilla OS and the free Zorin OS editions. Manjaro stays disabled when its
+official metadata endpoint is unavailable. A variant without an exact official
 mapping remains visibly skipped; it is never silently converted to another edition.
 
 ## Installation
