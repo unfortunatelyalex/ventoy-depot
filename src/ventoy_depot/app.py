@@ -71,6 +71,8 @@ class VentoyDepotApp(App[None]):
             self.query_one("#status", Static).update(f"[red]{error}[/red]")
             return
         self.devices = {device.identifier: device for device in devices}
+        self.query_one("#scan", Button).disabled = True
+        self.query_one("#device-card", Static).update("")
         self.query_one("#device", Select).set_options(
             [(item.display_name, item.identifier) for item in devices]
         )
