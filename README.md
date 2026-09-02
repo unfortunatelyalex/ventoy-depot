@@ -20,6 +20,17 @@ validation, and USB copies run in the background; the TUI remains responsive and
 the active ISO and byte progress. The application does not overwrite an ISO that has the
 same target filename, preventing a failed or stale update from replacing an existing file.
 
+To update ISOs in the TUI:
+
+1. Select the Ventoy data partition and choose **Check updates**.
+2. Review installed and available versions. Press Space or Enter on a row to toggle it.
+3. Choose **Update selected**, review the complete plan, then confirm the transfer.
+
+Automatic official resolution currently covers Arch Linux, Ubuntu, Debian, Fedora
+Workstation/Server/KDE, Linux Mint stable editions, EndeavourOS, Omarchy, Manjaro stable,
+Pop!_OS, Vanilla OS and the free Zorin OS editions. A variant without an exact official
+mapping remains visibly skipped; it is never silently converted to another edition.
+
 ## Installation
 
 Install Python 3.11 or newer, then use one of:

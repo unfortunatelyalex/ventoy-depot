@@ -24,6 +24,7 @@ packages = ["src/ventoy_depot", "src/ventoy_iso_updater"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src"]
 
 [tool.ruff]
 line-length = 100

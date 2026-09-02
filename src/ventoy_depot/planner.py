@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import shutil
 
 from .iso import find_isos
@@ -29,6 +30,15 @@ def build_plan(device: Device, refresh: bool = False) -> UpdatePlan:
             if target and target.verification_level == VerificationLevel.UNVERIFIED:
                 errors.append("Automatic updates require an official checksum.")
         action = UpdateAction.ADD if target and not errors else UpdateAction.SKIP
+        if target and identity and not provider.is_newer(target, identity):
+            warnings.append("Already current.")
+            action = UpdateAction.SKIP
+        if target and (detected.path.parent / target.filename).exists():
+            warnings.append(f"Target ISO already exists: {target.filename}")
+            action = UpdateAction.SKIP
+        if not os.access(device.mount_path, os.W_OK):
+            errors.append("The Ventoy drive is not writable.")
+            action = UpdateAction.SKIP
         required = target.size_bytes if target else None
         if required is not None and required > free:
             errors.append("Insufficient free space on the Ventoy drive.")
@@ -39,6 +49,8 @@ def build_plan(device: Device, refresh: bool = False) -> UpdatePlan:
                 detected, target, action, free, required, level, tuple(warnings), tuple(errors)
             )
         )
-    seed = "\n".join(f"{item.local.path}:{item.local.identity}" for item in items)
+    seed = "\n".join(
+        f"{item.local.path}:{item.local.identity}:{item.target}:{item.action}" for item in items
+    )
     plan_id = hashlib.sha256(seed.encode()).hexdigest()[:16]
     return UpdatePlan(device, tuple(items), plan_id)
