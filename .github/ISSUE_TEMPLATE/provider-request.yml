@@ -1,0 +1,31 @@
+name: Provider request
+description: Request support for a free, publicly downloadable ISO
+title: "[Provider request] "
+labels: [provider]
+body:
+  - type: input
+    id: project
+    attributes:
+      label: Project and official website
+    validations:
+      required: true
+  - type: textarea
+    id: variants
+    attributes:
+      label: Editions, flavors, architectures, languages, and channels
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Official checksums, signatures, and documented fingerprints
+    validations:
+      required: true
+  - type: checkboxes
+    id: public
+    attributes:
+      label: Download policy
+      options:
+        - label: The requested media is free and publicly downloadable without login.
+          required: true
+

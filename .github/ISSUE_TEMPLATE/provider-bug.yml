@@ -1,0 +1,29 @@
+name: Provider bug
+description: Report incorrect detection, resolution, or verification
+title: "[Provider bug] "
+labels: [provider, bug]
+body:
+  - type: input
+    id: provider
+    attributes:
+      label: Provider
+    validations:
+      required: true
+  - type: input
+    id: filename
+    attributes:
+      label: ISO filename (remove private paths and URL tokens)
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected identity and behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
