@@ -134,7 +134,10 @@ def is_newer_version(candidate: str, installed: str | None) -> bool:
         from packaging.version import Version
     except ImportError:
         return _numeric_key(candidate) > _numeric_key(installed)
-    return Version(candidate) > Version(installed)
+    try:
+        return Version(candidate) > Version(installed)
+    except ValueError:
+        return _numeric_key(candidate) > _numeric_key(installed)
 
 
 def _numeric_key(value: str) -> tuple[tuple[int, int | str], ...]:

@@ -21,6 +21,7 @@ def test_tui_mounts_without_stylesheet_errors(monkeypatch) -> None:
             await pilot.pause()
             assert app.is_running
             assert app.query_one("#isos")
+            assert app.query_one("#update").disabled
 
     asyncio.run(exercise())
 

@@ -74,6 +74,8 @@ def apply_item(
         if progress:
             progress("download-verify", downloaded.stat().st_size, downloaded.stat().st_size)
         revalidate_device(device)
+        if shutil.disk_usage(device_root).free < downloaded.stat().st_size:
+            raise TransferError("Insufficient free space on the Ventoy drive before copying.")
         _copy(downloaded, partial, progress)
         _verify(partial, artifact.checksum_algorithm, artifact.checksum)
         _fsync_file(partial)
@@ -117,6 +119,9 @@ def _download(
     mode = "ab" if existing and status == 206 else "wb"
     completed = existing if mode == "ab" else 0
     total = expected_size or completed + int(response.headers.get("Content-Length", 0))
+    if total and shutil.disk_usage(target.parent).free < max(total - completed, 0):
+        response.close()
+        raise TransferError("Insufficient free space in the download staging directory.")
     current_validator = response.headers.get("ETag") or response.headers.get("Last-Modified")
     if current_validator:
         validator_path.write_text(
