@@ -257,7 +257,8 @@ def _device_for_path(root: Path) -> Device:
 
 
 def _fsync_file(path: Path) -> None:
-    with path.open("rb") as file:
+    # Windows requires a writable descriptor for FlushFileBuffers via os.fsync.
+    with path.open("r+b") as file:
         os.fsync(file.fileno())
 
 
