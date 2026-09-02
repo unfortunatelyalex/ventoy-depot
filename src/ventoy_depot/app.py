@@ -44,18 +44,19 @@ class VentoyDepotApp(App[None]):
         self.action_refresh()
 
     def on_select_changed(self, event: Select.Changed) -> None:
-        blank = event.value is Select.BLANK
-        self.query_one("#scan", Button).disabled = blank
-        if not blank:
-            device = self.devices[str(event.value)]
-            free = (
-                f"{device.free_bytes / 2**30:.1f} GiB free"
-                if device.free_bytes is not None
-                else "free space unknown"
-            )
-            self.query_one("#device-card", Static).update(
-                f"{device.display_name}\n{device.mount_path} · {free} · {device.detection_reason}"
-            )
+        device = self.devices.get(str(event.value))
+        self.query_one("#scan", Button).disabled = device is None
+        if device is None:
+            self.query_one("#device-card", Static).update("")
+            return
+        free = (
+            f"{device.free_bytes / 2**30:.1f} GiB free"
+            if device.free_bytes is not None
+            else "free space unknown"
+        )
+        self.query_one("#device-card", Static).update(
+            f"{device.display_name}\n{device.mount_path} · {free} · {device.detection_reason}"
+        )
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "refresh":
@@ -79,11 +80,12 @@ class VentoyDepotApp(App[None]):
 
     def action_scan(self) -> None:
         selected = self.query_one("#device", Select).value
-        if selected is Select.BLANK:
+        device = self.devices.get(str(selected))
+        if device is None:
             return
         table = self.query_one("#isos", DataTable)
         table.clear()
-        for item in find_isos(self.devices[str(selected)].mount_path):
+        for item in find_isos(device.mount_path):
             identity = item.identity
             if identity is None:
                 table.add_row("Unknown", "—", "—", "—", "unverified", "Needs assignment")
