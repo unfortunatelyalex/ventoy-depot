@@ -449,6 +449,7 @@ class VentoyDepotApp(App[None]):
                         item.local.path.name,
                     ),
                     cache_dir=cache_path() / "downloads",
+                    device=plan.device,
                 )
             except Exception as error:
                 results.append(ItemResult(str(item.local.path), ResultStatus.FAILED, str(error)))

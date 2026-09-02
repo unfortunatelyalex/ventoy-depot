@@ -7,6 +7,7 @@ import pytest
 
 from ventoy_depot.models import (
     DetectedIso,
+    Device,
     IsoIdentity,
     PlanItem,
     ReleaseArtifact,
@@ -106,3 +107,33 @@ def test_bad_checksum_never_creates_visible_or_partial_iso(
     assert not destination.exists()
     assert not destination.with_name(destination.name + ".partial").exists()
     assert plan_item.local.path.exists()
+
+
+def test_label_detected_device_does_not_require_marker_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    Client.data = b"new verified ISO"
+    monkeypatch.setattr("ventoy_depot.transfer.SafeHttpClient", Client)
+    seen: list[Device] = []
+
+    def revalidate(device: Device) -> Device:
+        seen.append(device)
+        return device
+
+    monkeypatch.setattr("ventoy_depot.transfer.revalidate_device", revalidate)
+    plan_item = item(tmp_path, hashlib.sha256(Client.data).hexdigest())
+    device = Device(
+        "/dev/sdb1",
+        "/dev/sdb1 (Ventoy)",
+        tmp_path,
+        10**9,
+        10**9,
+        True,
+        True,
+        "volume-label",
+    )
+
+    destination = apply_item(plan_item, cache_dir=tmp_path / "cache", device=device)
+
+    assert destination.read_bytes() == Client.data
+    assert seen == [device, device]
