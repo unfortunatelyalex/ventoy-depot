@@ -17,7 +17,7 @@ jobs:
           fetch-depth: 0
       - name: Require a signed release tag
         run: git verify-tag "${GITHUB_REF_NAME}"
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.14"
       - run: python -m pip install build
