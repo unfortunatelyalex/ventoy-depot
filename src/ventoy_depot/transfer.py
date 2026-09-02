@@ -28,6 +28,7 @@ def apply_item(
     progress: Progress | None = None,
     cache_dir: Path | None = None,
     trusted_keyring: Path | None = None,
+    device: Device | None = None,
 ) -> Path:
     artifact = item.target
     if artifact is None or item.local.identity is None:
@@ -36,12 +37,16 @@ def apply_item(
         raise TransferError("Skipped plan items cannot be applied.")
     if artifact.verification_level == VerificationLevel.UNVERIFIED:
         raise TransferError("Unverified artifacts cannot be applied automatically.")
-    device_root = _device_root(item.local.path)
+    if device is None:
+        device_root = _device_root(item.local.path)
+        device = _device_for_path(device_root)
+    else:
+        device_root = device.mount_path.resolve(strict=True)
+        _within(device_root, item.local.path)
     destination = item.local.path.parent / safe_filename(artifact.filename)
     _within(device_root, destination)
     if destination.exists():
         raise TransferError(f"Target ISO already exists: {destination.name}")
-    device = _device_for_path(device_root)
     revalidate_device(device)
     required = artifact.size_bytes or 0
     if shutil.disk_usage(device_root).free < required:
