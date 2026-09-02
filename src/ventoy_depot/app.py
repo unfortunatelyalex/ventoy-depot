@@ -15,8 +15,6 @@ class VentoyDepotApp(App[None]):
     #content { width: 96%; max-width: 140; margin: 1 2; }
     #device-card { margin: 1 0; }
     DataTable { height: 1fr; min-height: 12; }
-    .compact { display: none; }
-    @media (width < 80) { .wide { display: none; } .compact { display: block; } }
     """
     TITLE = "Ventoy Depot"
     BINDINGS = [("r", "refresh", "Refresh"), ("s", "scan", "Scan"), ("q", "quit", "Quit")]
