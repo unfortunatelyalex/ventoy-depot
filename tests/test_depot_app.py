@@ -67,9 +67,7 @@ def test_refresh_clears_a_selection_that_is_no_longer_available(monkeypatch) -> 
 def test_selected_row_shows_literal_checked_marker(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr("ventoy_depot.app.discover_ventoy_devices", lambda: [])
     iso = tmp_path / "arch.iso"
-    identity = IsoIdentity(
-        "arch", "archlinux", None, None, "stable", "x86_64", None, "1", None
-    )
+    identity = IsoIdentity("arch", "archlinux", None, None, "stable", "x86_64", None, "1", None)
     artifact = ReleaseArtifact(
         "2",
         None,

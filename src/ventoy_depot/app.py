@@ -383,9 +383,7 @@ class VentoyDepotApp(App[None]):
         item = self.row_items[table.cursor_row]
         if item.local.identity is not None:
             self.query_one("#status", Static).update(
-                translate("already_identified", self.language).format(
-                    name=item.local.path.name
-                )
+                translate("already_identified", self.language).format(name=item.local.path.name)
             )
             return
         self.push_screen(

@@ -19,9 +19,7 @@ def test_assignment_is_bound_to_file_hash(tmp_path: Path) -> None:
 def test_planner_uses_hash_bound_assignment(monkeypatch, tmp_path: Path) -> None:
     iso = tmp_path / "renamed.iso"
     iso.write_bytes(b"iso")
-    identity = IsoIdentity(
-        "test", "test-product", None, None, "stable", "x86_64", None, "1", None
-    )
+    identity = IsoIdentity("test", "test-product", None, None, "stable", "x86_64", None, "1", None)
     AssignmentCatalog(tmp_path).assign(iso, identity)
     device = Device("id", "Ventoy", tmp_path, 100, 100, True, True)
 
