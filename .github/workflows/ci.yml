@@ -33,5 +33,4 @@ jobs:
       - name: CLI smoke test
         run: ventoy-depot providers list --json
       - name: TUI smoke test
-        run: python -c "from ventoy_depot.app import VentoyDepotApp; assert VentoyDepotApp.TITLE == 'Ventoy Depot'"
-
+        run: pytest -q tests/test_depot_app.py
