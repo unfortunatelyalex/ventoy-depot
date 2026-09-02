@@ -23,8 +23,14 @@ same target filename, preventing a failed or stale update from replacing an exis
 To update ISOs in the TUI:
 
 1. Select the Ventoy data partition and choose **Check updates**.
-2. Review installed and available versions. Press Space or Enter on a row to toggle it.
+2. Review installed and available versions. Press Space or Enter on a row to toggle its
+   visible `[ ]` / `[x]` selection marker.
 3. Choose **Update selected**, review the complete plan, then confirm the transfer.
+
+For a renamed ISO that cannot be recognized, highlight its row and choose **Assign ISO**
+(or press `A`). Select the original product and enter the variant and installed version.
+The mapping is stored in `.ventoy-depot/catalog.json` on that drive and is bound to the
+ISO's SHA-256 hash, so replacing or modifying the file invalidates stale mappings.
 
 Automatic official resolution currently covers Arch Linux, Ubuntu, Debian, Fedora
 Workstation/Server/KDE, Linux Mint stable editions, EndeavourOS, Omarchy, Pop!_OS,

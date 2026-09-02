@@ -3,7 +3,9 @@ from __future__ import annotations
 import hashlib
 import os
 import shutil
+from dataclasses import replace
 
+from .assignments import AssignmentCatalog, AssignmentError
 from .iso import find_isos
 from .models import Device, PlanItem, UpdateAction, UpdatePlan, VerificationLevel
 from .providers import provider_map
@@ -12,6 +14,7 @@ from .providers import provider_map
 def build_plan(device: Device, refresh: bool = False) -> UpdatePlan:
     del refresh  # provider caches will consume this flag once remote registry lands
     providers = provider_map()
+    assignments = AssignmentCatalog(device.mount_path)
     free = shutil.disk_usage(device.mount_path).free
     items: list[PlanItem] = []
     for detected in find_isos(device.mount_path):
@@ -20,17 +23,32 @@ def build_plan(device: Device, refresh: bool = False) -> UpdatePlan:
         target = None
         identity = detected.identity
         if identity is None:
-            errors.append("ISO identity is unknown; assign it interactively first.")
-        else:
-            provider = providers[identity.provider_id]
             try:
-                target = provider.resolve(identity)
-            except Exception as error:  # provider failure becomes structured plan state
-                warnings.append(str(error))
+                identity = assignments.lookup(detected.path)
+            except AssignmentError as error:
+                errors.append(str(error))
+            if identity is not None:
+                detected = replace(
+                    detected,
+                    identity=identity,
+                    confidence=1.0,
+                    detection_source="catalog-sha256",
+                )
+            else:
+                errors.append("ISO identity is unknown; highlight it and choose Assign ISO.")
+        if identity is not None:
+            provider = providers.get(identity.provider_id)
+            if provider is None:
+                errors.append(f"Unknown provider in ISO assignment: {identity.provider_id}")
+            else:
+                try:
+                    target = provider.resolve(identity)
+                except Exception as error:  # provider failure becomes structured plan state
+                    warnings.append(str(error))
             if target and target.verification_level == VerificationLevel.UNVERIFIED:
                 errors.append("Automatic updates require an official checksum.")
         action = UpdateAction.ADD if target and not errors else UpdateAction.SKIP
-        if target and identity and not provider.is_newer(target, identity):
+        if target and identity and provider is not None and not provider.is_newer(target, identity):
             warnings.append("Already current.")
             action = UpdateAction.SKIP
         if target and (detected.path.parent / target.filename).exists():
