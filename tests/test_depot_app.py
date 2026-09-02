@@ -2,10 +2,19 @@ import asyncio
 from importlib.metadata import version
 from pathlib import Path
 
-from textual.widgets import Static
+from rich.text import Text
+from textual.widgets import Button, Static
 
-from ventoy_depot.app import VentoyDepotApp
-from ventoy_depot.models import Device
+from ventoy_depot.app import AssignIdentity, VentoyDepotApp
+from ventoy_depot.models import (
+    DetectedIso,
+    Device,
+    IsoIdentity,
+    PlanItem,
+    ReleaseArtifact,
+    UpdateAction,
+    VerificationLevel,
+)
 
 
 def test_supported_textual_major_is_installed() -> None:
@@ -51,5 +60,59 @@ def test_refresh_clears_a_selection_that_is_no_longer_available(monkeypatch) -> 
             assert app.query_one("#scan").disabled
             assert app.query_one("#device-card", Static).content == ""
             assert not app.devices
+
+    asyncio.run(exercise())
+
+
+def test_selected_row_shows_literal_checked_marker(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr("ventoy_depot.app.discover_ventoy_devices", lambda: [])
+    iso = tmp_path / "arch.iso"
+    identity = IsoIdentity("arch", "archlinux", None, None, "stable", "x86_64", None, "1", None)
+    artifact = ReleaseArtifact(
+        "2",
+        None,
+        "arch-2.iso",
+        "https://example.test/arch-2.iso",
+        1,
+        "sha256",
+        "a" * 64,
+        None,
+        (),
+        frozenset({"example.test"}),
+    )
+    item = PlanItem(
+        DetectedIso(iso, identity, 1.0, "test"),
+        artifact,
+        UpdateAction.ADD,
+        2,
+        1,
+        VerificationLevel.CHECKSUM,
+    )
+
+    async def exercise() -> None:
+        app = VentoyDepotApp()
+        async with app.run_test() as pilot:
+            app.row_items = [item]
+            app.selected_paths = {iso}
+            app._render_plan()
+            await pilot.pause()
+            marker = app.query_one("#isos").get_row_at(0)[0]
+            assert isinstance(marker, Text)
+            assert marker.plain == "[x]"
+
+    asyncio.run(exercise())
+
+
+def test_assignment_dialog_requires_version(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr("ventoy_depot.app.discover_ventoy_devices", lambda: [])
+
+    async def exercise() -> None:
+        app = VentoyDepotApp()
+        async with app.run_test() as pilot:
+            app.push_screen(AssignIdentity(tmp_path / "renamed.iso", "en"))
+            await pilot.pause()
+            app.screen.query_one("#assign-save", Button).press()
+            await pilot.pause()
+            assert "required" in str(app.screen.query_one("#assign-error", Static).content)
 
     asyncio.run(exercise())
