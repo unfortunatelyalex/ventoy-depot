@@ -1,6 +1,11 @@
 import asyncio
+from importlib.metadata import version
 
 from ventoy_depot.app import VentoyDepotApp
+
+
+def test_supported_textual_major_is_installed() -> None:
+    assert version("textual").split(".", 1)[0] == "8"
 
 
 def test_tui_mounts_without_stylesheet_errors(monkeypatch) -> None:
