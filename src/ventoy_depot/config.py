@@ -5,6 +5,7 @@ import os
 import tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from platformdirs import user_cache_path, user_config_path
 
@@ -17,6 +18,7 @@ class Settings:
     proxy: str | None = None
     metadata_parallelism: int = 4
     default_action: str = "add"
+    local_manifests: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if self.language not in {"en", "de"}:
@@ -25,6 +27,19 @@ class Settings:
             raise ValueError("Metadata parallelism must be between 1 and 16.")
         if self.default_action not in {"add", "skip"}:
             raise ValueError("The safe default action must be add or skip.")
+        if self.proxy is not None:
+            parsed = urlsplit(self.proxy)
+            if (
+                parsed.scheme not in {"http", "https"}
+                or not parsed.hostname
+                or parsed.username
+                or parsed.password
+            ):
+                raise ValueError("Proxy must be a credential-free HTTP or HTTPS URL.")
+        if len(self.local_manifests) != len(set(self.local_manifests)):
+            raise ValueError("Local manifest paths must be unique.")
+        if any(not item or not Path(item).is_absolute() for item in self.local_manifests):
+            raise ValueError("Local manifest paths must be non-empty absolute paths.")
 
 
 def config_path() -> Path:
@@ -42,6 +57,12 @@ def load_settings(path: Path | None = None) -> Settings:
     payload = json.loads(source.read_text(encoding="utf-8"))
     if payload.pop("schema_version", None) != 1:
         raise ValueError("Unsupported settings schema version.")
+    local_manifests = payload.get("local_manifests", ())
+    if not isinstance(local_manifests, list) or any(
+        not isinstance(item, str) for item in local_manifests
+    ):
+        raise ValueError("Local manifests must be a list of absolute paths.")
+    payload["local_manifests"] = tuple(local_manifests)
     return Settings(**payload)
 
 

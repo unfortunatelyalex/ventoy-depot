@@ -11,7 +11,7 @@ from .devices import DeviceError, discover_ventoy_devices, find_device
 from .iso import find_isos, sha256_file
 from .models import to_jsonable
 from .planner import build_plan
-from .providers import BUILTIN_PROVIDERS
+from .providers import provider_map
 from .security import SecurityError, load_and_validate_manifest
 
 SCHEMA_VERSION = "1"
@@ -45,12 +45,12 @@ def parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     arguments = parser().parse_args(argv)
-    if arguments.command is None:
-        run_tui()
-        return 0
     try:
+        if arguments.command is None:
+            run_tui()
+            return 0
         return _dispatch(arguments)
-    except (DeviceError, SecurityError, OSError) as error:
+    except (DeviceError, SecurityError, OSError, ValueError) as error:
         _emit({"error": str(error)}, True)
         return 2
 
@@ -77,9 +77,10 @@ def _dispatch(arguments: argparse.Namespace) -> int:
                 "provider_id": item.provider_id,
                 "display_name": item.display_name,
                 "capabilities": to_jsonable(item.capabilities),
-                "origin": "bundled",
+                "origin": item.origin,
+                "custom": item.custom,
             }
-            for item in BUILTIN_PROVIDERS
+            for item in provider_map().values()
         ]
         return _output(listing, arguments.json)
     if arguments.provider_command == "validate":
@@ -88,7 +89,7 @@ def _dispatch(arguments: argparse.Namespace) -> int:
         return 0
     selected = [
         item
-        for item in BUILTIN_PROVIDERS
+        for item in provider_map().values()
         if not arguments.provider or item.provider_id == arguments.provider
     ]
     if not selected:
@@ -96,7 +97,12 @@ def _dispatch(arguments: argparse.Namespace) -> int:
         return 3
     return _output(
         [
-            {"provider_id": item.provider_id, "status": "bundled", "network_checked": False}
+            {
+                "provider_id": item.provider_id,
+                "status": item.origin,
+                "custom": item.custom,
+                "network_checked": False,
+            }
             for item in selected
         ],
         False,

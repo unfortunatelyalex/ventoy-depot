@@ -3,24 +3,67 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Iterable
+from dataclasses import replace
 from urllib.parse import urljoin
 
 from ..models import IsoIdentity, ReleaseArtifact
 from ..network import SafeHttpClient
 from .base import ProviderError
 
+BUILTIN_RESOLVER_IDS = frozenset(
+    {
+        "arch",
+        "alpine",
+        "rocky-linux",
+        "almalinux",
+        "ubuntu",
+        "debian",
+        "fedora",
+        "linux-mint",
+        "endeavouros",
+        "cachyos",
+        "clonezilla",
+        "gparted-live",
+        "kali-linux",
+        "nixos",
+        "systemrescue",
+        "opensuse-tumbleweed",
+        "freebsd",
+        "omarchy",
+        "manjaro",
+        "pop-os",
+        "proxmox",
+        "rescuezilla",
+        "vanilla-os",
+        "zorin-os",
+    }
+)
+
 
 def resolve_release(provider_id: str, identity: IsoIdentity) -> ReleaseArtifact:
     resolvers = {
         "arch": _arch,
+        "alpine": _alpine,
+        "rocky-linux": _rocky_linux,
+        "almalinux": _almalinux,
         "ubuntu": _ubuntu,
         "debian": _debian,
         "fedora": _fedora,
         "linux-mint": _linux_mint,
         "endeavouros": _endeavouros,
+        "cachyos": _cachyos,
+        "clonezilla": _clonezilla,
+        "gparted-live": _gparted_live,
+        "kali-linux": _kali_linux,
+        "nixos": _nixos,
+        "systemrescue": _systemrescue,
+        "opensuse-tumbleweed": _opensuse_tumbleweed,
+        "freebsd": _freebsd,
         "omarchy": _omarchy,
         "manjaro": _manjaro,
         "pop-os": _pop_os,
+        "proxmox": _proxmox,
+        "rescuezilla": _rescuezilla,
         "vanilla-os": _vanilla_os,
         "zorin-os": _zorin_os,
     }
@@ -41,6 +84,7 @@ def resolve_release(provider_id: str, identity: IsoIdentity) -> ReleaseArtifact:
 
 
 def _artifact(
+    identity: IsoIdentity,
     version: str,
     filename: str,
     url: str,
@@ -62,6 +106,7 @@ def _artifact(
         signature_url=None,
         signer_fingerprints=(),
         allowed_hosts=frozenset(hosts),
+        identity=replace(identity, version=version, build=build),
     )
 
 
@@ -75,9 +120,10 @@ def _checksum(text: str, filename: str, algorithm: str) -> str:
     patterns = (
         rf"^(?P<hash>[A-Fa-f0-9]{{{length}}})\s+[* ]?{escaped}\s*$",
         rf"^{algorithm.upper()}\s*\({escaped}\)\s*=\s*(?P<hash>[A-Fa-f0-9]{{{length}}})\s*$",
+        rf"{escaped}.{{0,500}}?(?P<hash>[A-Fa-f0-9]{{{length}}})",
     )
     for pattern in patterns:
-        if match := re.search(pattern, text, re.MULTILINE):
+        if match := re.search(pattern, text, re.MULTILINE | re.DOTALL):
             return match.group("hash").lower()
     stripped = text.strip()
     if re.fullmatch(rf"[A-Fa-f0-9]{{{length}}}(?:\s+.+)?", stripped):
@@ -100,12 +146,118 @@ def _arch(identity: IsoIdentity) -> ReleaseArtifact:
         raise ProviderError("The Arch checksum list contains no versioned x86_64 ISO.")
     filename, version = max(candidates, key=lambda item: _version_key(item[1]))
     return _artifact(
+        identity,
         version,
         filename,
         base + filename,
         "sha256",
         _checksum(sums, filename, "sha256"),
         {"geo.mirror.pkgbuild.com"},
+    )
+
+
+def _alpine(identity: IsoIdentity) -> ReleaseArtifact:
+    editions = {"standard", "extended", "virtual", "xen"}
+    architectures = {
+        "x86",
+        "x86_64",
+        "aarch64",
+        "armv7",
+        "loongarch64",
+        "ppc64le",
+        "riscv64",
+        "s390x",
+    }
+    if identity.edition not in editions or identity.architecture not in architectures:
+        raise ProviderError("This Alpine image type or architecture is not supported.")
+    if identity.edition == "extended" and identity.architecture not in {"x86", "x86_64"}:
+        raise ProviderError("Alpine Extended is published for x86 and x86_64 only.")
+    if identity.edition == "xen" and identity.architecture != "x86_64":
+        raise ProviderError("Alpine Xen is published for x86_64 only.")
+    hosts = {"www.alpinelinux.org", "dl-cdn.alpinelinux.org"}
+    client = SafeHttpClient(frozenset(hosts))
+    page = _text(client, "https://www.alpinelinux.org/downloads/")
+    pattern = re.compile(
+        rf'https://dl-cdn\.alpinelinux\.org/alpine/[^"\'<> ]+/releases/'
+        rf"{re.escape(identity.architecture)}/"
+        rf"(alpine-{re.escape(identity.edition)}-(?P<version>\d+(?:\.\d+)+)-"
+        rf"{re.escape(identity.architecture)}\.iso)"
+    )
+    matches = list(pattern.finditer(page))
+    if not matches:
+        raise ProviderError("The Alpine downloads page contains no matching stable ISO.")
+    match = max(matches, key=lambda item: _version_key(item.group("version")))
+    filename, version = match.group(1), match.group("version")
+    url = match.group(0)
+    checksum = _checksum(_text(client, url + ".sha256"), filename, "sha256")
+    return _artifact(identity, version, filename, url, "sha256", checksum, hosts)
+
+
+def _enterprise_linux(
+    identity: IsoIdentity,
+    *,
+    provider_id: str,
+    product_name: str,
+    host: str,
+    root: str,
+) -> ReleaseArtifact:
+    if identity.channel not in {"8", "9", "10"}:
+        raise ProviderError(f"Unsupported {product_name} major-release channel.")
+    if identity.edition not in {"boot", "dvd", "dvd1", "minimal"}:
+        raise ProviderError(f"Unsupported {product_name} ISO edition.")
+    if identity.flavor not in {None, "latest-alias"}:
+        raise ProviderError(f"Unsupported {product_name} ISO flavor.")
+    client = SafeHttpClient(frozenset({host}))
+    base = root.format(channel=identity.channel, architecture=identity.architecture)
+    sums = _text(client, base + "CHECKSUM")
+    if provider_id == "rocky-linux":
+        prefix = "Rocky"
+        edition = identity.edition
+    else:
+        prefix = "AlmaLinux"
+        edition = identity.edition
+    pattern = re.compile(
+        rf"\b({prefix}-(?P<version>{re.escape(identity.channel)}\.\d+)-"
+        rf"{re.escape(identity.architecture)}-{re.escape(edition)}\.iso)\b",
+        re.IGNORECASE,
+    )
+    matches = list(pattern.finditer(sums))
+    if not matches:
+        raise ProviderError(f"The official {product_name} checksum list has no matching ISO.")
+    match = max(matches, key=lambda item: _version_key(item.group("version")))
+    filename, version = match.group(1), match.group("version")
+    return _artifact(
+        identity,
+        version,
+        filename,
+        base + filename,
+        "sha256",
+        _checksum(sums, filename, "sha256"),
+        {host},
+    )
+
+
+def _rocky_linux(identity: IsoIdentity) -> ReleaseArtifact:
+    if identity.architecture not in {"x86_64", "aarch64"}:
+        raise ProviderError("Rocky Linux automatic updates support x86_64 and aarch64 only.")
+    return _enterprise_linux(
+        identity,
+        provider_id="rocky-linux",
+        product_name="Rocky Linux",
+        host="download.rockylinux.org",
+        root=("https://download.rockylinux.org/pub/rocky/{channel}/isos/{architecture}/"),
+    )
+
+
+def _almalinux(identity: IsoIdentity) -> ReleaseArtifact:
+    if identity.architecture not in {"x86_64", "x86_64_v2", "aarch64", "ppc64le", "s390x"}:
+        raise ProviderError("This AlmaLinux architecture is not supported.")
+    return _enterprise_linux(
+        identity,
+        provider_id="almalinux",
+        product_name="AlmaLinux",
+        host="repo.almalinux.org",
+        root="https://repo.almalinux.org/almalinux/{channel}/isos/{architecture}/",
     )
 
 
@@ -134,7 +286,7 @@ def _ubuntu(identity: IsoIdentity) -> ReleaseArtifact:
     sums = _text(client, base + "SHA256SUMS")
     filename = f"ubuntu-{version}-{identity.edition}-{identity.architecture}.iso"
     checksum = _checksum(sums, filename, "sha256")
-    return _artifact(version, filename, base + filename, "sha256", checksum, {host})
+    return _artifact(identity, version, filename, base + filename, "sha256", checksum, {host})
 
 
 def _debian(identity: IsoIdentity) -> ReleaseArtifact:
@@ -145,6 +297,8 @@ def _debian(identity: IsoIdentity) -> ReleaseArtifact:
             raise ProviderError("Debian live updates require an amd64 desktop flavor.")
         directory = "current-live/amd64/iso-hybrid"
         pattern = rf"debian-live-(?P<version>\d+(?:\.\d+)+)-amd64-{re.escape(identity.flavor)}\.iso"
+    elif identity.flavor is not None:
+        raise ProviderError("Non-live Debian images cannot carry a desktop flavor.")
     elif identity.edition == "netinst":
         directory = f"current/{identity.architecture}/iso-cd"
         pattern = rf"debian-(?P<version>\d+(?:\.\d+)+)-{identity.architecture}-netinst\.iso"
@@ -165,18 +319,31 @@ def _debian(identity: IsoIdentity) -> ReleaseArtifact:
     match = max(matches, key=lambda item: _version_key(item.group("version")))
     filename, version = match.group(0), match.group("version")
     return _artifact(
-        version, filename, base + filename, "sha512", _checksum(sums, filename, "sha512"), {host}
+        identity,
+        version,
+        filename,
+        base + filename,
+        "sha512",
+        _checksum(sums, filename, "sha512"),
+        {host},
     )
 
 
 def _fedora(identity: IsoIdentity) -> ReleaseArtifact:
     if identity.architecture not in {"x86_64", "aarch64"}:
         raise ProviderError("Fedora automatic updates support x86_64 and aarch64 only.")
-    edition_paths = {"workstation": "Workstation", "server": "Server", "kde": "KDE"}
+    edition_paths = {
+        "workstation": ("Workstation", "live"),
+        "server": ("Server", "dvd"),
+        "kde": ("KDE", "live"),
+        "kde-desktop": ("KDE", "live"),
+    }
     try:
-        edition = edition_paths[identity.edition or ""]
+        edition, expected_flavor = edition_paths[identity.edition or ""]
     except KeyError as error:
         raise ProviderError("This Fedora edition has no configured official feed yet.") from error
+    if identity.flavor != expected_flavor:
+        raise ProviderError("The Fedora edition and image flavor do not form a supported variant.")
     host = "dl.fedoraproject.org"
     root = f"https://{host}/pub/fedora/linux/releases/"
     client = SafeHttpClient(frozenset({host}))
@@ -197,6 +364,7 @@ def _fedora(identity: IsoIdentity) -> ReleaseArtifact:
     sums = _text(client, base + checksum_names[0])
     build_match = re.search(rf"-{version}-(?P<build>\d+(?:\.\d+)+)", filename)
     return _artifact(
+        identity,
         version,
         filename,
         base + filename,
@@ -221,6 +389,7 @@ def _linux_mint(identity: IsoIdentity) -> ReleaseArtifact:
     sums_url = f"https://mirrors.kernel.org/linuxmint/stable/{version}/sha256sum.txt"
     checksum = _checksum(_text(client, sums_url), filename, "sha256")
     return _artifact(
+        identity,
         version,
         filename,
         f"https://pub.linuxmint.io/stable/{version}/{filename}",
@@ -244,8 +413,237 @@ def _endeavouros(identity: IsoIdentity) -> ReleaseArtifact:
         raise ProviderError("Could not determine the EndeavourOS release date.")
     sums = _text(client, url + ".sha512sum")
     return _artifact(
-        version_match.group(1), filename, url, "sha512", _checksum(sums, filename, "sha512"), hosts
+        identity,
+        version_match.group(1),
+        filename,
+        url,
+        "sha512",
+        _checksum(sums, filename, "sha512"),
+        hosts,
     )
+
+
+def _cachyos(identity: IsoIdentity) -> ReleaseArtifact:
+    if identity.edition == "kde":
+        raise ProviderError(
+            "The historical CachyOS KDE image was discontinued. Assign it to the current "
+            "desktop edition explicitly before updating."
+        )
+    if identity.edition not in {"desktop", "handheld"} or identity.architecture != "x86_64":
+        raise ProviderError("This CachyOS edition or architecture is not supported.")
+    if identity.flavor or identity.channel != "stable":
+        raise ProviderError("CachyOS automatic updates support stable unmodified images only.")
+    host = "mirror.cachyos.org"
+    client = SafeHttpClient(frozenset({host}))
+    root = f"https://{host}/ISO/{identity.edition}/"
+    releases = re.findall(r'href=["\'](?P<version>\d{6})/["\']', _text(client, root))
+    if not releases:
+        raise ProviderError("The official CachyOS directory contains no releases.")
+    version = max(releases, key=_version_key)
+    base = f"{root}{version}/"
+    filename = f"cachyos-{identity.edition}-linux-{version}.iso"
+    checksum = _checksum(_text(client, base + filename + ".sha256"), filename, "sha256")
+    return _artifact(identity, version, filename, base + filename, "sha256", checksum, {host})
+
+
+def _clonezilla(identity: IsoIdentity) -> ReleaseArtifact:
+    if identity.edition not in {"debian", "ubuntu"} or identity.architecture != "amd64":
+        raise ProviderError("This Clonezilla edition or architecture is not supported.")
+    branch = "stable" if identity.edition == "debian" else "alternative"
+    hosts = {"clonezilla.org", "downloads.sourceforge.net", "sourceforge.net"}
+    client = SafeHttpClient(frozenset(hosts))
+    sums = _text(client, f"https://clonezilla.org/downloads/{branch}/checksums.php")
+    pattern = re.compile(r"\b(clonezilla-live-(?P<version>[\w.-]+)-amd64\.iso)\b")
+    matches = list(pattern.finditer(sums))
+    if not matches:
+        raise ProviderError("The official Clonezilla checksum page contains no amd64 ISO.")
+    match = matches[0]
+    filename, version = match.group(1), match.group("version")
+    project = "clonezilla_live_stable" if branch == "stable" else "clonezilla_live_alternative"
+    url = f"https://downloads.sourceforge.net/clonezilla/{project}/{version}/{filename}"
+    return _artifact(
+        identity,
+        version,
+        filename,
+        url,
+        "sha256",
+        _checksum(sums, filename, "sha256"),
+        hosts,
+    )
+
+
+def _gparted_live(identity: IsoIdentity) -> ReleaseArtifact:
+    if identity.edition != "live" or identity.architecture != "amd64" or identity.flavor:
+        raise ProviderError("GParted Live automatic updates support the stable amd64 ISO only.")
+    hosts = {
+        "gparted.org",
+        "downloads.sourceforge.net",
+        "sourceforge.net",
+        "netcologne.dl.sourceforge.net",
+    }
+    client = SafeHttpClient(frozenset(hosts))
+    sums = _text(client, "https://gparted.org/gparted-live/stable/CHECKSUMS.TXT")
+    candidates = re.findall(r"\b(gparted-live-(\d+(?:\.\d+)+-\d+)-amd64\.iso)\b", sums)
+    if not candidates:
+        raise ProviderError("The official GParted checksum list contains no amd64 ISO.")
+    filename, version = max(candidates, key=lambda item: _version_key(item[1]))
+    url = (
+        "https://downloads.sourceforge.net/project/gparted/gparted-live-stable/"
+        f"{version}/{filename}?use_mirror=netcologne"
+    )
+    return _artifact(
+        identity,
+        version,
+        filename,
+        url,
+        "sha256",
+        _checksum(sums, filename, "sha256"),
+        hosts,
+    )
+
+
+def _kali_linux(identity: IsoIdentity) -> ReleaseArtifact:
+    editions = {"installer", "installer-netinst", "installer-purple", "live", "live-everything"}
+    if identity.edition not in editions or identity.architecture not in {"amd64", "arm64"}:
+        raise ProviderError("This Kali image type or architecture is not supported.")
+    if identity.flavor or identity.channel != "stable":
+        raise ProviderError("Kali automatic updates support quarterly unmodified images only.")
+    hosts = {"archive.kali.org", "cdimage.kali.org"}
+    base = "https://archive.kali.org/kali-images/current/"
+    client = SafeHttpClient(frozenset(hosts))
+    sums = _text(client, base + "SHA256SUMS")
+    pattern = re.compile(
+        rf"\b(kali-linux-(?P<version>\d{{4}}\.\d+)-{re.escape(identity.edition)}-"
+        rf"{re.escape(identity.architecture)}\.iso)\b"
+    )
+    matches = list(pattern.finditer(sums))
+    if not matches:
+        raise ProviderError("The official Kali checksum list contains no matching ISO.")
+    match = max(matches, key=lambda item: _version_key(item.group("version")))
+    filename, version = match.group(1), match.group("version")
+    return _artifact(
+        identity,
+        version,
+        filename,
+        base + filename,
+        "sha256",
+        _checksum(sums, filename, "sha256"),
+        hosts,
+    )
+
+
+def _nixos(identity: IsoIdentity) -> ReleaseArtifact:
+    if identity.edition not in {"graphical", "minimal"} or identity.architecture not in {
+        "x86_64",
+        "aarch64",
+    }:
+        raise ProviderError("This NixOS image type or architecture is not supported.")
+    if identity.flavor not in {None, "plasma5"} or (
+        identity.flavor == "plasma5" and identity.edition != "graphical"
+    ):
+        raise ProviderError("This NixOS graphical flavor cannot be preserved.")
+    hosts = {"nixos.org", "channels.nixos.org", "releases.nixos.org"}
+    client = SafeHttpClient(frozenset(hosts))
+    page = _text(client, "https://nixos.org/download/")
+    channels = re.findall(r"nixos-(\d+\.\d+)/latest-nixos", page)
+    if not channels:
+        release = re.search(r"\b(\d{2}\.\d{2})\b", page)
+        channels = [release.group(1)] if release else []
+    if not channels:
+        raise ProviderError("The official NixOS page contains no stable release channel.")
+    channel = max(channels, key=_version_key)
+    base = f"https://channels.nixos.org/nixos-{channel}/latest-nixos-{identity.edition}-"
+    url = f"{base}{identity.architecture}-linux.iso"
+    sums = _text(client, url + ".sha256")
+    checksum_match = re.fullmatch(r"\s*(?P<hash>[A-Fa-f0-9]{64})\s+(?P<filename>[^\s]+)\s*", sums)
+    if checksum_match is None:
+        raise ProviderError("The official NixOS checksum sidecar is invalid.")
+    filename = checksum_match.group("filename")
+    artifact_match = re.fullmatch(
+        rf"nixos-{identity.edition}-(?P<version>\d+\.\d+\.\d+\.[a-f0-9]+)-"
+        rf"{identity.architecture}-linux\.iso",
+        filename,
+    )
+    if artifact_match is None:
+        raise ProviderError("The NixOS checksum refers to an unexpected artifact.")
+    return _artifact(
+        identity,
+        artifact_match.group("version"),
+        filename,
+        url,
+        "sha256",
+        checksum_match.group("hash").lower(),
+        hosts,
+    )
+
+
+def _systemrescue(identity: IsoIdentity) -> ReleaseArtifact:
+    if identity.edition != "live" or identity.architecture != "amd64" or identity.flavor:
+        raise ProviderError("SystemRescue automatic updates support the stable amd64 ISO only.")
+    hosts = {"www.system-rescue.org", "fastly-cdn.system-rescue.org"}
+    client = SafeHttpClient(frozenset(hosts))
+    page = _text(client, "https://www.system-rescue.org/Download/")
+    matches = re.findall(r"\b(systemrescue-(\d+(?:\.\d+)+)-amd64\.iso)\b", page)
+    if not matches:
+        raise ProviderError("The official SystemRescue page contains no amd64 ISO.")
+    filename, version = max(matches, key=lambda item: _version_key(item[1]))
+    checksum_base = f"https://www.system-rescue.org/releases/{version}/"
+    checksum = _checksum(_text(client, checksum_base + filename + ".sha256"), filename, "sha256")
+    url = f"https://fastly-cdn.system-rescue.org/releases/{version}/{filename}"
+    return _artifact(identity, version, filename, url, "sha256", checksum, hosts)
+
+
+def _opensuse_tumbleweed(identity: IsoIdentity) -> ReleaseArtifact:
+    editions = {"dvd", "net", "rescue-cd", "gnome-live", "kde-live", "xfce-live"}
+    if identity.edition not in editions or identity.architecture not in {"x86_64", "aarch64"}:
+        raise ProviderError("This openSUSE Tumbleweed medium or architecture is not supported.")
+    host = "download.opensuse.org"
+    client = SafeHttpClient(frozenset({host}))
+    if identity.architecture == "aarch64":
+        base = f"https://{host}/download/ports/aarch64/tumbleweed/iso/"
+    else:
+        base = f"https://{host}/download/tumbleweed/iso/"
+    listing = _text(client, base)
+    label = {
+        "dvd": "DVD",
+        "net": "NET",
+        "rescue-cd": "Rescue-CD",
+        "gnome-live": "GNOME-Live",
+        "kde-live": "KDE-Live",
+        "xfce-live": "XFCE-Live",
+    }[identity.edition]
+    pattern = re.compile(
+        rf"\b(openSUSE-Tumbleweed-{label}-{re.escape(identity.architecture)}-"
+        rf"Snapshot(?P<version>\d{{8}})-Media\.iso)\b",
+        re.IGNORECASE,
+    )
+    matches = list(pattern.finditer(listing))
+    if not matches:
+        raise ProviderError("The openSUSE directory contains no matching snapshot ISO.")
+    match = max(matches, key=lambda item: item.group("version"))
+    filename, version = match.group(1), match.group("version")
+    checksum = _checksum(_text(client, base + filename + ".sha256"), filename, "sha256")
+    return _artifact(identity, version, filename, base + filename, "sha256", checksum, {host})
+
+
+def _freebsd(identity: IsoIdentity) -> ReleaseArtifact:
+    if identity.edition not in {"disc1", "dvd1", "bootonly"} or identity.architecture not in {
+        "amd64",
+        "arm64",
+    }:
+        raise ProviderError("This FreeBSD medium or architecture is not supported.")
+    host = "download.freebsd.org"
+    client = SafeHttpClient(frozenset({host}))
+    root = f"https://{host}/ftp/releases/ISO-IMAGES/"
+    versions = re.findall(r'href=["\'](?P<version>\d+(?:\.\d+)+)/["\']', _text(client, root))
+    if not versions:
+        raise ProviderError("The FreeBSD release directory contains no releases.")
+    version = max(versions, key=_version_key)
+    base = f"{root}{version}/"
+    filename = f"FreeBSD-{version}-RELEASE-{identity.architecture}-{identity.edition}.iso"
+    checksum_name = f"CHECKSUM.SHA256-FreeBSD-{version}-RELEASE-{identity.architecture}"
+    checksum = _checksum(_text(client, base + checksum_name), filename, "sha256")
+    return _artifact(identity, version, filename, base + filename, "sha256", checksum, {host})
 
 
 def _omarchy(identity: IsoIdentity) -> ReleaseArtifact:
@@ -259,7 +657,7 @@ def _omarchy(identity: IsoIdentity) -> ReleaseArtifact:
     filename = f"omarchy-{version}.iso"
     url = f"https://iso.omarchy.org/{filename}"
     checksum = _checksum(_text(client, url + ".sha256"), filename, "sha256")
-    return _artifact(version, filename, url, "sha256", checksum, hosts)
+    return _artifact(identity, version, filename, url, "sha256", checksum, hosts)
 
 
 def _manjaro(identity: IsoIdentity) -> ReleaseArtifact:
@@ -267,6 +665,8 @@ def _manjaro(identity: IsoIdentity) -> ReleaseArtifact:
         raise ProviderError("This Manjaro edition or architecture has no configured official feed.")
     if identity.channel != "stable":
         raise ProviderError("Manjaro review/preview updates require an explicit channel mapping.")
+    if identity.flavor not in {"full", "minimal"}:
+        raise ProviderError("Manjaro updates require an explicit full or minimal image flavor.")
     host = "download.manjaro.org"
     client = SafeHttpClient(frozenset({host}))
     root = f"https://{host}/{identity.edition}/"
@@ -286,6 +686,7 @@ def _manjaro(identity: IsoIdentity) -> ReleaseArtifact:
     build = (re.search(r"-(\d{6})-linux", filename) or [None, None])[1]
     sums = _text(client, base + filename + ".sha256")
     return _artifact(
+        identity,
         version,
         filename,
         base + filename,
@@ -321,6 +722,7 @@ def _pop_os(identity: IsoIdentity) -> ReleaseArtifact:
     ):
         raise ProviderError("The Pop!_OS API returned invalid artifact metadata.")
     return _artifact(
+        identity,
         str(payload.get("version", version)),
         filename,
         url,
@@ -329,6 +731,86 @@ def _pop_os(identity: IsoIdentity) -> ReleaseArtifact:
         hosts,
         build=str(payload.get("build")),
         size_bytes=int(payload["size"]),
+    )
+
+
+def _proxmox(identity: IsoIdentity) -> ReleaseArtifact:
+    prefixes = {
+        "proxmox-ve": "proxmox-ve",
+        "proxmox-backup-server": "proxmox-backup-server",
+        "proxmox-mail-gateway": "proxmox-mail-gateway",
+        "proxmox-datacenter-manager": "proxmox-datacenter-manager",
+    }
+    try:
+        prefix = prefixes[identity.product_id]
+    except KeyError as error:
+        raise ProviderError("This Proxmox product is not supported.") from error
+    if identity.edition != "installer" or identity.architecture not in {"amd64", "arm64"}:
+        raise ProviderError("This Proxmox installer variant is not supported.")
+    if identity.architecture == "arm64" and identity.product_id != "proxmox-ve":
+        raise ProviderError("Only Proxmox VE currently publishes an ARM64 ISO.")
+    host = "enterprise.proxmox.com"
+    client = SafeHttpClient(frozenset({host}))
+    page = _text(client, f"https://{host}/iso/")
+    arch_suffix = "-arm64" if identity.architecture == "arm64" else ""
+    pattern = re.compile(
+        rf"\b({re.escape(prefix)}_(?P<version>\d+(?:\.\d+)+-\d+){arch_suffix}\.iso)\b"
+    )
+    matches = list(pattern.finditer(page))
+    if not matches:
+        raise ProviderError("The official Proxmox index contains no matching ISO.")
+    match = max(matches, key=lambda item: _version_key(item.group("version")))
+    filename, version = match.group(1), match.group("version")
+    return _artifact(
+        identity,
+        version,
+        filename,
+        f"https://{host}/iso/{filename}",
+        "sha256",
+        _checksum(page, filename, "sha256"),
+        {host},
+    )
+
+
+def _rescuezilla(identity: IsoIdentity) -> ReleaseArtifact:
+    if (
+        identity.edition != "live"
+        or identity.flavor not in {"noble", "oracular", "questing", "resolute"}
+        or identity.architecture != "amd64"
+    ):
+        raise ProviderError("This Rescuezilla image variant is not supported.")
+    hosts = {
+        "api.github.com",
+        "github.com",
+        "release-assets.githubusercontent.com",
+        "objects.githubusercontent.com",
+    }
+    client = SafeHttpClient(frozenset(hosts))
+    payload = json.loads(
+        _text(client, "https://api.github.com/repos/rescuezilla/rescuezilla/releases/latest")
+    )
+    version = str(payload.get("tag_name", "")).removeprefix("v")
+    filename = f"rescuezilla-{version}-64bit.{identity.flavor}.iso"
+    assets = {
+        str(asset.get("name")): asset
+        for asset in payload.get("assets", [])
+        if isinstance(asset, dict)
+    }
+    asset = assets.get(filename)
+    if not version or asset is None:
+        raise ProviderError("The Rescuezilla release lacks the selected Ubuntu-base variant.")
+    digest = str(asset.get("digest", ""))
+    if not re.fullmatch(r"sha256:[A-Fa-f0-9]{64}", digest):
+        raise ProviderError("The Rescuezilla asset lacks an official SHA-256 digest.")
+    return _artifact(
+        identity,
+        version,
+        filename,
+        str(asset.get("browser_download_url", "")),
+        "sha256",
+        digest.removeprefix("sha256:").lower(),
+        hosts,
+        size_bytes=int(asset["size"]),
     )
 
 
@@ -362,6 +844,7 @@ def _vanilla_os(identity: IsoIdentity) -> ReleaseArtifact:
         raise ProviderError("The Vanilla OS release lacks its SHA-256 asset.")
     checksum = _checksum(_text(client, assets[checksum_name]), filename, "sha256")
     return _artifact(
+        identity,
         match.group("version"),
         filename,
         assets[filename],
@@ -399,5 +882,12 @@ def _zorin_os(identity: IsoIdentity) -> ReleaseArtifact:
     else:
         url = f"https://zorin.com/os/download/{version.split('.', 1)[0]}/{edition.lower()}/"
     return _artifact(
-        version, filename, url, "sha256", match.group("hash").lower(), hosts, build=build
+        identity,
+        version,
+        filename,
+        url,
+        "sha256",
+        match.group("hash").lower(),
+        hosts,
+        build=build,
     )

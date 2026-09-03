@@ -17,12 +17,15 @@ class ProviderCapabilities:
     architectures: tuple[str, ...]
     languages: tuple[str, ...]
     channels: tuple[str, ...]
+    flavors: tuple[str, ...] = ()
 
 
 class Provider(ABC):
     provider_id: str
     display_name: str
     capabilities: ProviderCapabilities
+    origin: str = "bundled"
+    custom: bool = False
 
     @abstractmethod
     def detect(self, path: Path) -> DetectedIso | None:
