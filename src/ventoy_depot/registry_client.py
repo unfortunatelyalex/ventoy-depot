@@ -71,7 +71,7 @@ def _refresh_due(directory: Path, now: datetime | None = None) -> bool:
 
 
 def _refresh(directory: Path, trust_root: Path) -> None:
-    from tuf.ngclient import Updater
+    from tuf.ngclient.updater import Updater
 
     metadata = directory / "metadata"
     targets = directory / "targets"
@@ -151,7 +151,7 @@ def _verify_cached_target(target_info: Any, path: Path, target_root: Path) -> No
 
 
 def _offline_updater(directory: Path, trust_root: Path) -> Any:
-    from tuf.ngclient import Updater
+    from tuf.ngclient.updater import Updater
 
     metadata = directory / "metadata"
     targets = directory / "targets"

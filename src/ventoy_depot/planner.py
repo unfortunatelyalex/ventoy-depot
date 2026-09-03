@@ -90,10 +90,10 @@ def build_plan(
             action = UpdateAction.SKIP
         destination = detected.path.parent / target.filename if target else None
         if destination and destination.exists():
-            warnings.append(f"Target ISO already exists: {target.filename}")
+            warnings.append(f"Target ISO already exists: {destination.name}")
             action = UpdateAction.SKIP
         elif destination and destination in planned_destinations:
-            errors.append(f"Another selected ISO has the same target path: {target.filename}")
+            errors.append(f"Another selected ISO has the same target path: {destination.name}")
             action = UpdateAction.SKIP
         if not os.access(device.mount_path, os.W_OK):
             errors.append("The Ventoy drive is not writable.")

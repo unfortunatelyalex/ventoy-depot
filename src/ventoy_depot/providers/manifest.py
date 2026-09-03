@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import json
 import re
 from dataclasses import replace
@@ -7,12 +8,12 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin, urlsplit
 
-import regex
-
 from ..models import DetectedIso, IsoIdentity, ReleaseArtifact
 from ..network import SafeHttpClient
 from ..security import safe_filename
 from .base import Provider, ProviderCapabilities, ProviderError
+
+regex: Any = importlib.import_module("regex")
 
 
 class ManifestProvider(Provider):

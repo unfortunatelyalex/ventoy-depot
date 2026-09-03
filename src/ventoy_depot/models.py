@@ -145,6 +145,7 @@ def _numeric_key(value: str) -> tuple[tuple[int, ...], int, tuple[str, ...]]:
     import re
 
     match = re.match(r"^\D*(\d+(?:[._-]\d+)*)", value)
+    release: tuple[int, ...]
     if match is None:
         release = (0,) * 8
         suffix = value.lower()
