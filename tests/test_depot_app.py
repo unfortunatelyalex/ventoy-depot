@@ -8,6 +8,7 @@ from textual.widgets import Button, Static, TextArea
 
 from ventoy_depot.app import (
     _ASSIGNMENT_PROFILES,
+    AddIsoDialog,
     AssignIdentity,
     SettingsDialog,
     VentoyDepotApp,
@@ -24,6 +25,7 @@ from ventoy_depot.models import (
     UpdatePlan,
     VerificationLevel,
 )
+from ventoy_depot.providers.builtin import BUILTIN_PROVIDERS
 from ventoy_depot.report import ItemResult, ResultStatus, RunReport
 
 
@@ -50,6 +52,7 @@ def test_tui_mounts_without_stylesheet_errors(monkeypatch) -> None:
             assert app.query_one("#update").disabled
             assert app.query_one("#cancel-run").disabled
             assert app.query_one("#retry").disabled
+            assert app.query_one("#verify").disabled
 
     asyncio.run(exercise())
 
@@ -122,6 +125,52 @@ def test_selected_row_shows_literal_checked_marker(monkeypatch, tmp_path: Path) 
     asyncio.run(exercise())
 
 
+def test_replace_action_is_explicit_and_selects_the_row(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr("ventoy_depot.app.discover_ventoy_devices", lambda: [])
+    iso = tmp_path / "constant.iso"
+    iso.write_bytes(b"old")
+    identity = IsoIdentity("test", "test", None, None, "stable", "x86_64", None, "1", None)
+    artifact = ReleaseArtifact(
+        "2",
+        None,
+        iso.name,
+        "https://example.test/constant.iso",
+        1,
+        "sha256",
+        "a" * 64,
+        None,
+        (),
+        frozenset({"example.test"}),
+        identity,
+    )
+    item = PlanItem(
+        DetectedIso(iso, identity, 1.0, "test"),
+        artifact,
+        UpdateAction.SKIP,
+        2,
+        1,
+        VerificationLevel.CHECKSUM,
+        replacement_allowed=True,
+    )
+    device = Device("id", "Ventoy", tmp_path, 2, 2, True, True)
+    plan = UpdatePlan(device, (item,), "before")
+
+    async def exercise() -> None:
+        app = VentoyDepotApp()
+        async with app.run_test() as pilot:
+            app.plan = plan
+            app.row_items = [item]
+            app._render_plan()
+            app.action_replace_old()
+            await pilot.pause()
+            assert app.plan is not None
+            assert app.plan.items[0].action == UpdateAction.REPLACE
+            assert iso in app.selected_paths
+            assert app.query_one("#isos").get_row_at(0)[0].plain == "[x]"
+
+    asyncio.run(exercise())
+
+
 def test_safe_skip_default_does_not_preselect_updates(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr("ventoy_depot.app.discover_ventoy_devices", lambda: [])
     iso = tmp_path / "arch.iso"
@@ -173,6 +222,56 @@ def test_assignment_dialog_requires_version(monkeypatch, tmp_path: Path) -> None
             assert "required" in str(app.screen.query_one("#assign-error", Static).content)
 
     asyncio.run(exercise())
+
+
+def test_assignment_dialog_uses_volume_id_as_nonbinding_profile_hint(
+    monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr("ventoy_depot.app.discover_ventoy_devices", lambda: [])
+
+    async def exercise() -> None:
+        app = VentoyDepotApp()
+        async with app.run_test() as pilot:
+            app.push_screen(
+                AssignIdentity(tmp_path / "renamed.iso", "en", "Ubuntu 26.04 LTS amd64")
+            )
+            await pilot.pause()
+            selected = str(app.screen.query_one("#assign-profile").value)
+            assert selected.startswith("ubuntu|")
+            assert any(
+                "Ubuntu 26.04" in str(widget.content) for widget in app.screen.query("Static")
+            )
+
+    asyncio.run(exercise())
+
+
+def test_add_iso_dialog_builds_versionless_explicit_identity(monkeypatch) -> None:
+    monkeypatch.setattr("ventoy_depot.app.discover_ventoy_devices", lambda: [])
+    arch = next(provider for provider in BUILTIN_PROVIDERS if provider.provider_id == "arch")
+    chosen: list[IsoIdentity | None] = []
+
+    async def exercise() -> None:
+        app = VentoyDepotApp()
+        async with app.run_test() as pilot:
+            app.push_screen(AddIsoDialog((arch,), "en"), chosen.append)
+            await pilot.pause()
+            app.screen.query_one("#add-save", Button).press()
+            await pilot.pause()
+
+    asyncio.run(exercise())
+    assert chosen == [
+        IsoIdentity(
+            "arch",
+            "archlinux",
+            None,
+            None,
+            "stable",
+            "x86_64",
+            None,
+            None,
+            None,
+        )
+    ]
 
 
 def test_keyboard_refresh_is_ignored_while_operation_runs(monkeypatch) -> None:

@@ -9,12 +9,33 @@ _MESSAGES = {
         "scan": "Scan ISOs",
         "check_updates": "Check updates",
         "update_selected": "Update selected",
+        "replace_old": "Replace old ISO",
+        "replace_unavailable": "The highlighted ISO cannot be replaced automatically.",
         "assign_iso": "Assign ISO",
+        "add_iso": "Add new ISO",
+        "add_title": "Add a new official ISO",
+        "add_help": (
+            "Choose the exact product variant. Ventoy Depot resolves and verifies the latest "
+            "matching official release before it writes anything."
+        ),
+        "prepare_add": "Prepare download plan",
+        "add_required": "Channel and architecture are required.",
+        "no_add_providers": "No downloadable providers are available.",
+        "resolving_new_iso": "Resolving the selected official ISO…",
+        "verify_iso": "Verify ISO",
+        "verifying_iso": "Hashing the highlighted ISO…",
+        "verify_missing": "The highlighted row has no existing local ISO.",
+        "verify_match": "VERIFIED: checksum matches the current official release.",
+        "verify_mismatch": "FAILED: checksum does not match the current official release.",
+        "verify_hash_only": (
+            "HASHED: no matching historical official checksum is available automatically."
+        ),
         "assign_title": "Assign highlighted ISO",
         "assign_help": (
             "Use this only for a renamed ISO from a supported product. The assignment is "
             "bound to this file's SHA-256; changing the file invalidates it."
         ),
+        "volume_id_hint": "Read-only ISO volume identifier: {volume_id}",
         "provider_product": "Product",
         "edition": "Edition (optional unless required by the product)",
         "flavor": "Flavor (optional)",
@@ -36,6 +57,10 @@ _MESSAGES = {
         "confirm_title": "Confirm complete update plan",
         "keep_old": (
             "Existing ISOs remain on the drive. New files become visible only after verification."
+        ),
+        "replace_warning": (
+            "Items marked REPLACE move the old ISO to .ventoy-depot/trash only after the new "
+            "copy has been verified."
         ),
         "start_updates": "Download and install",
         "cancel": "Cancel",
@@ -68,12 +93,36 @@ _MESSAGES = {
         "scan": "ISOs prüfen",
         "check_updates": "Updates prüfen",
         "update_selected": "Auswahl aktualisieren",
+        "replace_old": "Alte ISO ersetzen",
+        "replace_unavailable": "Die markierte ISO kann nicht automatisch ersetzt werden.",
         "assign_iso": "ISO zuordnen",
+        "add_iso": "Neue ISO hinzufügen",
+        "add_title": "Neue offizielle ISO hinzufügen",
+        "add_help": (
+            "Wähle die genaue Produktvariante. Ventoy Depot ermittelt und prüft das neueste "
+            "passende offizielle Release, bevor etwas geschrieben wird."
+        ),
+        "prepare_add": "Downloadplan erstellen",
+        "add_required": "Kanal und Architektur sind erforderlich.",
+        "no_add_providers": "Es sind keine herunterladbaren Provider verfügbar.",
+        "resolving_new_iso": "Die ausgewählte offizielle ISO wird ermittelt…",
+        "verify_iso": "ISO verifizieren",
+        "verifying_iso": "Die markierte ISO wird gehasht…",
+        "verify_missing": "Für die markierte Zeile existiert noch keine lokale ISO.",
+        "verify_match": "VERIFIZIERT: Prüfsumme entspricht dem aktuellen offiziellen Release.",
+        "verify_mismatch": (
+            "FEHLGESCHLAGEN: Prüfsumme entspricht nicht dem aktuellen offiziellen Release."
+        ),
+        "verify_hash_only": (
+            "GEHASHT: Eine passende historische offizielle Prüfsumme ist nicht automatisch "
+            "verfügbar."
+        ),
         "assign_title": "Markierte ISO zuordnen",
         "assign_help": (
             "Nur für eine umbenannte ISO eines unterstützten Produkts verwenden. Die Zuordnung "
             "wird an den SHA-256-Hash dieser Datei gebunden und bei Änderungen ungültig."
         ),
+        "volume_id_hint": "Read-only erkannte ISO-Datenträgerkennung: {volume_id}",
         "provider_product": "Produkt",
         "edition": "Edition (optional, sofern das Produkt sie nicht benötigt)",
         "flavor": "Variante (optional)",
@@ -95,6 +144,10 @@ _MESSAGES = {
         "confirm_title": "Vollständigen Updateplan bestätigen",
         "keep_old": (
             "Bestehende ISOs bleiben erhalten. Neue Dateien werden erst nach der Prüfung sichtbar."
+        ),
+        "replace_warning": (
+            "Bei REPLACE wird die alte ISO erst nach erfolgreicher Prüfung der neuen Kopie nach "
+            ".ventoy-depot/trash verschoben."
         ),
         "start_updates": "Herunterladen und installieren",
         "cancel": "Abbrechen",

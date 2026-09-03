@@ -5,6 +5,7 @@ import json
 import os
 import platform
 import shutil
+import stat
 import subprocess
 import tempfile
 from collections.abc import Callable
@@ -56,8 +57,16 @@ def apply_item(
         _within(device_root, item.local.path)
     destination = item.local.path.parent / safe_filename(artifact.filename)
     _within(device_root, destination)
-    if destination.exists():
+    same_file_replace = bool(
+        item.action == UpdateAction.REPLACE
+        and destination.exists()
+        and destination.resolve(strict=True) == item.local.path.resolve(strict=True)
+    )
+    if destination.exists() and not same_file_replace:
         raise TransferError(f"Target ISO already exists: {destination.name}")
+    original_signature = (
+        _file_signature(item.local.path) if item.action == UpdateAction.REPLACE else None
+    )
     revalidate_device(device)
     required = artifact.size_bytes or 0
     if shutil.disk_usage(device_root).free < required:
@@ -116,13 +125,39 @@ def apply_item(
         )
         _raise_if_cancelled(cancelled)
         revalidate_device(device)
-        if destination.exists():
-            raise TransferError(f"Target ISO already exists: {destination.name}")
+        if original_signature is not None:
+            _require_unchanged(item.local.path, original_signature)
         _fsync_file(partial)
-        os.replace(partial, destination)
-        _fsync_directory(destination.parent)
-        if item.action == UpdateAction.REPLACE and item.local.path != destination:
-            _trash(item.local.path, device_root)
+        if same_file_replace:
+            assert original_signature is not None
+            _require_unchanged(item.local.path, original_signature)
+            trashed = _trash(item.local.path, device_root)
+            _fsync_directory(trashed.parent)
+            _fsync_directory(destination.parent)
+            try:
+                os.replace(partial, destination)
+            except Exception:
+                try:
+                    if trashed.exists() and not destination.exists():
+                        os.replace(trashed, destination)
+                        _fsync_directory(destination.parent)
+                except Exception as restore_error:
+                    raise TransferError(
+                        "The new ISO could not be published and the old ISO remains in "
+                        f"the Ventoy trash: {trashed}"
+                    ) from restore_error
+                raise
+            _fsync_directory(destination.parent)
+        else:
+            if destination.exists():
+                raise TransferError(f"Target ISO already exists: {destination.name}")
+            os.replace(partial, destination)
+            _fsync_directory(destination.parent)
+            if item.action == UpdateAction.REPLACE:
+                assert original_signature is not None
+                _require_unchanged(item.local.path, original_signature)
+                _trash(item.local.path, device_root)
+                _fsync_directory(item.local.path.parent)
         return destination
     except Exception:
         if partial.exists():
@@ -314,6 +349,22 @@ def _trash(path: Path, root: Path) -> Path:
         index += 1
     os.replace(path, candidate)
     return candidate
+
+
+def _file_signature(path: Path) -> tuple[int, int, int, int]:
+    details = path.stat(follow_symlinks=False)
+    if not stat.S_ISREG(details.st_mode):
+        raise TransferError("The ISO selected for replacement is not a regular file.")
+    return details.st_dev, details.st_ino, details.st_size, details.st_mtime_ns
+
+
+def _require_unchanged(path: Path, expected: tuple[int, int, int, int]) -> None:
+    try:
+        actual = _file_signature(path)
+    except FileNotFoundError as error:
+        raise TransferError("The ISO selected for replacement disappeared.") from error
+    if actual != expected:
+        raise TransferError("The ISO selected for replacement changed during the update.")
 
 
 def _within(root: Path, path: Path) -> None:

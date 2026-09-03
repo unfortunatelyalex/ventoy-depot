@@ -34,6 +34,10 @@ class FilenameProvider(Provider):
         self.rules = rules
         self.capabilities = capabilities
 
+    @property
+    def products(self) -> tuple[str, ...]:
+        return tuple(dict.fromkeys(rule.product_id for rule in self.rules))
+
     def detect(self, path: Path) -> DetectedIso | None:
         for rule in self.rules:
             if match := rule.expression.fullmatch(path.name):
@@ -97,9 +101,13 @@ def _lower(value: str | None) -> str | None:
 
 
 def _architecture(value: str) -> str:
-    return {"64bit": "x86_64", "64-bit": "x86_64", "x64": "x86_64", "all": "amd64"}.get(
-        value.lower(), value.lower()
-    )
+    return {
+        "64bit": "x86_64",
+        "64-bit": "x86_64",
+        "x64": "x86_64",
+        "x86-64": "x86_64",
+        "all": "amd64",
+    }.get(value.lower(), value.lower())
 
 
 BUILTIN_PROVIDERS: tuple[Provider, ...] = (
@@ -266,7 +274,10 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
             ),
             FilenameRule(
                 re.compile(
-                    r"Fedora-(?P<edition>Workstation|KDE-Desktop)-(?P<flavor>Live)-(?P<version>\d+)-(?P<build>\d+(?:\.\d+)+)\.(?P<architecture>x86_64|aarch64)\.iso$",
+                    r"Fedora-(?P<edition>Workstation|KDE-Desktop|Budgie|COSMIC|Cinnamon|"
+                    r"KDE-Mobile|LXDE|LXQt|MATE_Compiz|MiracleWM|SoaS|Sway|Xfce|i3)-"
+                    r"(?P<flavor>Live)-(?P<version>\d+)-(?P<build>\d+(?:\.\d+)+)\."
+                    r"(?P<architecture>x86_64|aarch64)\.iso$",
                     re.I,
                 ),
                 "fedora",
@@ -287,7 +298,25 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
             ),
         ),
         ProviderCapabilities(
-            ("workstation", "server", "kde", "kde-desktop", "silverblue", "iot"),
+            (
+                "workstation",
+                "server",
+                "kde",
+                "kde-desktop",
+                "silverblue",
+                "budgie",
+                "cosmic",
+                "cinnamon",
+                "kde-mobile",
+                "lxde",
+                "lxqt",
+                "mate_compiz",
+                "miraclewm",
+                "soas",
+                "sway",
+                "xfce",
+                "i3",
+            ),
             ("x86_64", "aarch64"),
             (),
             ("stable",),
@@ -828,5 +857,107 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
             (),
             ("stable",),
         ),
+    ),
+    FilenameProvider(
+        "netboot-xyz",
+        "netboot.xyz",
+        (
+            FilenameRule(
+                re.compile(r"netboot\.xyz\.iso$", re.I),
+                "netboot-xyz",
+                default_architecture="x86_64",
+                default_edition="standard",
+            ),
+            FilenameRule(
+                re.compile(r"netboot\.xyz-legacy\.iso$", re.I),
+                "netboot-xyz",
+                default_architecture="x86_64",
+                default_edition="legacy",
+            ),
+            FilenameRule(
+                re.compile(r"netboot\.xyz-arm64\.iso$", re.I),
+                "netboot-xyz",
+                default_architecture="arm64",
+                default_edition="standard",
+            ),
+        ),
+        ProviderCapabilities(("standard", "legacy"), ("x86_64", "arm64"), (), ("stable",)),
+    ),
+    FilenameProvider(
+        "gentoo",
+        "Gentoo Linux",
+        (
+            FilenameRule(
+                re.compile(
+                    r"install-(?P<architecture>amd64|arm64|x86)-minimal-"
+                    r"(?P<version>\d{8}T\d{6}Z)\.iso$",
+                    re.I,
+                ),
+                "gentoo",
+                default_edition="minimal",
+            ),
+            FilenameRule(
+                re.compile(r"livegui-amd64-(?P<version>\d{8}T\d{6}Z)\.iso$", re.I),
+                "gentoo",
+                default_architecture="amd64",
+                default_edition="livegui",
+            ),
+        ),
+        ProviderCapabilities(("minimal", "livegui"), ("amd64", "arm64", "x86"), (), ("stable",)),
+    ),
+    FilenameProvider(
+        "hirens-bootcd-pe",
+        "Hiren's BootCD PE",
+        (
+            FilenameRule(
+                re.compile(r"HBCD_PE_x64\.iso$", re.I),
+                "hirens-bootcd-pe",
+                default_architecture="x86_64",
+                default_edition="pe",
+            ),
+        ),
+        ProviderCapabilities(("pe",), ("x86_64",), (), ("stable",)),
+    ),
+    FilenameProvider(
+        "shredos",
+        "ShredOS",
+        (
+            FilenameRule(
+                re.compile(
+                    r"shredos-(?P<version>\d{4}\.\d+_\d+)_"
+                    r"(?P<architecture>x86-64|i686)_v"
+                    r"(?P<build>\d+(?:\.\d+)+_\d{8})"
+                    r"(?:_(?P<edition>lite))?"
+                    r"(?:_(?P<flavor>plus-partition))?\.iso$",
+                    re.I,
+                ),
+                "shredos",
+                default_edition="standard",
+            ),
+        ),
+        ProviderCapabilities(
+            ("standard", "lite"),
+            ("x86_64", "i686"),
+            (),
+            ("stable",),
+            ("plus-partition",),
+        ),
+    ),
+    FilenameProvider(
+        "netbsd",
+        "NetBSD",
+        (
+            FilenameRule(
+                re.compile(
+                    r"NetBSD-(?P<version>\d+(?:\.\d+)+)-"
+                    r"(?P<architecture>amd64|i386)\.iso$",
+                    re.I,
+                ),
+                "netbsd",
+                default_edition="installer",
+                default_channel="release",
+            ),
+        ),
+        ProviderCapabilities(("installer",), ("amd64", "i386"), (), ("release",)),
     ),
 )

@@ -36,6 +36,11 @@ BUILTIN_RESOLVER_IDS = frozenset(
         "rescuezilla",
         "vanilla-os",
         "zorin-os",
+        "netboot-xyz",
+        "gentoo",
+        "hirens-bootcd-pe",
+        "shredos",
+        "netbsd",
     }
 )
 
@@ -66,6 +71,11 @@ def resolve_release(provider_id: str, identity: IsoIdentity) -> ReleaseArtifact:
         "rescuezilla": _rescuezilla,
         "vanilla-os": _vanilla_os,
         "zorin-os": _zorin_os,
+        "netboot-xyz": _netboot_xyz,
+        "gentoo": _gentoo,
+        "hirens-bootcd-pe": _hirens_bootcd_pe,
+        "shredos": _shredos,
+        "netbsd": _netbsd,
     }
     try:
         resolver = resolvers[provider_id]
@@ -333,17 +343,32 @@ def _fedora(identity: IsoIdentity) -> ReleaseArtifact:
     if identity.architecture not in {"x86_64", "aarch64"}:
         raise ProviderError("Fedora automatic updates support x86_64 and aarch64 only.")
     edition_paths = {
-        "workstation": ("Workstation", "live"),
-        "server": ("Server", "dvd"),
-        "kde": ("KDE", "live"),
-        "kde-desktop": ("KDE", "live"),
+        "workstation": ("Workstation", "Workstation", "live"),
+        "server": ("Server", "Server", "dvd"),
+        "kde": ("KDE", "KDE", "live"),
+        "kde-desktop": ("KDE", "KDE", "live"),
+        "silverblue": ("Silverblue", "Silverblue", "ostree"),
+        "budgie": ("Spins", "Budgie", "live"),
+        "cosmic": ("Spins", "COSMIC", "live"),
+        "cinnamon": ("Spins", "Cinnamon", "live"),
+        "kde-mobile": ("Spins", "KDE-Mobile", "live"),
+        "lxde": ("Spins", "LXDE", "live"),
+        "lxqt": ("Spins", "LXQt", "live"),
+        "mate_compiz": ("Spins", "MATE_Compiz", "live"),
+        "miraclewm": ("Spins", "MiracleWM", "live"),
+        "soas": ("Spins", "SoaS", "live"),
+        "sway": ("Spins", "Sway", "live"),
+        "xfce": ("Spins", "Xfce", "live"),
+        "i3": ("Spins", "i3", "live"),
     }
     try:
-        edition, expected_flavor = edition_paths[identity.edition or ""]
+        directory, image_name, expected_flavor = edition_paths[identity.edition or ""]
     except KeyError as error:
         raise ProviderError("This Fedora edition has no configured official feed yet.") from error
     if identity.flavor != expected_flavor:
         raise ProviderError("The Fedora edition and image flavor do not form a supported variant.")
+    if directory == "Spins" and identity.architecture != "x86_64":
+        raise ProviderError("The selected Fedora Spin is currently published for x86_64 only.")
     host = "dl.fedoraproject.org"
     root = f"https://{host}/pub/fedora/linux/releases/"
     client = SafeHttpClient(frozenset({host}))
@@ -351,10 +376,14 @@ def _fedora(identity: IsoIdentity) -> ReleaseArtifact:
     if not versions:
         raise ProviderError("The Fedora release directory contains no stable releases.")
     version = str(max(map(int, versions)))
-    base = f"{root}{version}/{edition}/{identity.architecture}/iso/"
+    base = f"{root}{version}/{directory}/{identity.architecture}/iso/"
     listing = _text(client, base)
     iso_names = re.findall(r'href=["\']([^"\']+\.iso)["\']', listing, re.IGNORECASE)
-    wanted = [name for name in iso_names if edition.lower() in name.lower()]
+    wanted = [
+        name
+        for name in iso_names
+        if re.search(rf"^Fedora-{re.escape(image_name)}(?:-|_)", name, re.IGNORECASE)
+    ]
     if not wanted:
         raise ProviderError("The Fedora directory contains no matching ISO.")
     filename = sorted(wanted)[0]
@@ -890,4 +919,213 @@ def _zorin_os(identity: IsoIdentity) -> ReleaseArtifact:
         match.group("hash").lower(),
         hosts,
         build=build,
+    )
+
+
+def _netboot_xyz(identity: IsoIdentity) -> ReleaseArtifact:
+    if identity.product_id != "netboot-xyz" or identity.edition not in {"standard", "legacy"}:
+        raise ProviderError("This netboot.xyz ISO variant is not supported.")
+    if identity.architecture not in {"x86_64", "arm64"}:
+        raise ProviderError("This netboot.xyz architecture is not supported.")
+    if identity.edition == "legacy" and identity.architecture != "x86_64":
+        raise ProviderError("The legacy netboot.xyz ISO is published for x86_64 only.")
+    hosts = {
+        "api.github.com",
+        "github.com",
+        "release-assets.githubusercontent.com",
+        "objects.githubusercontent.com",
+    }
+    client = SafeHttpClient(frozenset(hosts))
+    payload = json.loads(
+        _text(client, "https://api.github.com/repos/netbootxyz/netboot.xyz/releases/latest")
+    )
+    version = str(payload.get("tag_name", "")).removeprefix("v")
+    if identity.architecture == "arm64":
+        filename = "netboot.xyz-arm64.iso"
+    elif identity.edition == "legacy":
+        filename = "netboot.xyz-legacy.iso"
+    else:
+        filename = "netboot.xyz.iso"
+    assets = {
+        str(asset.get("name")): asset
+        for asset in payload.get("assets", [])
+        if isinstance(asset, dict)
+    }
+    asset = assets.get(filename)
+    if not version or asset is None:
+        raise ProviderError("The netboot.xyz release lacks the selected ISO asset.")
+    digest = str(asset.get("digest", ""))
+    if not re.fullmatch(r"sha256:[A-Fa-f0-9]{64}", digest):
+        raise ProviderError("The netboot.xyz ISO lacks an official SHA-256 digest.")
+    return _artifact(
+        identity,
+        version,
+        filename,
+        str(asset.get("browser_download_url", "")),
+        "sha256",
+        digest.removeprefix("sha256:").lower(),
+        hosts,
+        size_bytes=int(asset["size"]),
+    )
+
+
+def _gentoo(identity: IsoIdentity) -> ReleaseArtifact:
+    if identity.product_id != "gentoo" or identity.edition not in {"minimal", "livegui"}:
+        raise ProviderError("This Gentoo ISO variant is not supported.")
+    if identity.architecture not in {"amd64", "arm64", "x86"}:
+        raise ProviderError("This Gentoo architecture is not supported.")
+    if identity.edition == "livegui" and identity.architecture != "amd64":
+        raise ProviderError("Gentoo LiveGUI is published for amd64 only.")
+    host = "distfiles.gentoo.org"
+    if identity.edition == "livegui":
+        directory = "current-livegui-amd64"
+        prefix = "livegui-amd64"
+    else:
+        directory = f"current-install-{identity.architecture}-minimal"
+        prefix = f"install-{identity.architecture}-minimal"
+    base = f"https://{host}/releases/{identity.architecture}/autobuilds/{directory}/"
+    client = SafeHttpClient(frozenset({host}))
+    listing = _text(client, base)
+    pattern = re.compile(rf"\b({re.escape(prefix)}-(?P<version>\d{{8}}T\d{{6}}Z)\.iso)\b")
+    matches = list(pattern.finditer(listing))
+    if not matches:
+        raise ProviderError("The Gentoo autobuild directory contains no matching ISO.")
+    match = max(matches, key=lambda item: item.group("version"))
+    filename, version = match.group(1), match.group("version")
+    checksum = _checksum(_text(client, base + filename + ".sha256"), filename, "sha256")
+    return _artifact(
+        identity,
+        version,
+        filename,
+        base + filename,
+        "sha256",
+        checksum,
+        {host},
+    )
+
+
+def _hirens_bootcd_pe(identity: IsoIdentity) -> ReleaseArtifact:
+    if (
+        identity.product_id != "hirens-bootcd-pe"
+        or identity.edition != "pe"
+        or identity.architecture != "x86_64"
+    ):
+        raise ProviderError("Only the official Hiren's BootCD PE x64 ISO is supported.")
+    host = "www.hirensbootcd.org"
+    client = SafeHttpClient(frozenset({host}))
+    page = _text(client, "https://www.hirensbootcd.org/download/")
+    version_match = re.search(
+        r"Hiren(?:'|’|&#(?:0?39|8217);)s BootCD PE x64 "
+        r"\(v(?P<version>\d+(?:\.\d+)+)\)",
+        page,
+    )
+    checksum_match = re.search(
+        r"ISO SHA-256.{0,500}?(?P<hash>[A-Fa-f0-9]{64})", page, re.IGNORECASE | re.DOTALL
+    )
+    size_match = re.search(r"\((?P<size>\d{7,}) bytes\)", page)
+    if version_match is None or checksum_match is None or size_match is None:
+        raise ProviderError("The Hiren's BootCD page lacks version, size or SHA-256 metadata.")
+    filename = "HBCD_PE_x64.iso"
+    return _artifact(
+        identity,
+        version_match.group("version"),
+        filename,
+        f"https://{host}/files/{filename}",
+        "sha256",
+        checksum_match.group("hash").lower(),
+        {host},
+        size_bytes=int(size_match.group("size")),
+    )
+
+
+def _shredos(identity: IsoIdentity) -> ReleaseArtifact:
+    if identity.product_id != "shredos" or identity.edition not in {"standard", "lite"}:
+        raise ProviderError("This ShredOS edition is not supported.")
+    if identity.architecture not in {"x86_64", "i686"}:
+        raise ProviderError("This ShredOS architecture is not supported.")
+    if identity.flavor not in {None, "plus-partition"}:
+        raise ProviderError("This ShredOS image flavor is not supported.")
+    hosts = {
+        "api.github.com",
+        "github.com",
+        "release-assets.githubusercontent.com",
+        "objects.githubusercontent.com",
+    }
+    client = SafeHttpClient(frozenset(hosts))
+    payload = json.loads(
+        _text(client, "https://api.github.com/repos/PartialVolume/shredos.x86_64/releases/latest")
+    )
+    expression = re.compile(
+        r"^shredos-(?P<version>\d{4}\.\d+_\d+)_"
+        r"(?P<architecture>x86-64|i686)_v(?P<build>\d+(?:\.\d+)+_\d{8})"
+        r"(?P<lite>_lite)?(?P<partition>_plus-partition)?\.iso$",
+        re.IGNORECASE,
+    )
+    selected: tuple[dict[str, object], re.Match[str]] | None = None
+    for value in payload.get("assets", []):
+        if not isinstance(value, dict):
+            continue
+        match = expression.fullmatch(str(value.get("name", "")))
+        if match is None:
+            continue
+        architecture = "x86_64" if match.group("architecture").lower() == "x86-64" else "i686"
+        edition = "lite" if match.group("lite") else "standard"
+        flavor = "plus-partition" if match.group("partition") else None
+        if (architecture, edition, flavor) == (
+            identity.architecture,
+            identity.edition,
+            identity.flavor,
+        ):
+            selected = value, match
+            break
+    if selected is None:
+        raise ProviderError("The latest ShredOS release lacks the selected ISO variant.")
+    asset, match = selected
+    digest = str(asset.get("digest", ""))
+    if not re.fullmatch(r"sha256:[A-Fa-f0-9]{64}", digest):
+        raise ProviderError("The ShredOS ISO lacks an official SHA-256 digest.")
+    size = asset.get("size")
+    if not isinstance(size, int) or size <= 0:
+        raise ProviderError("The ShredOS ISO lacks an official download size.")
+    return _artifact(
+        identity,
+        match.group("version"),
+        match.group(0),
+        str(asset.get("browser_download_url", "")),
+        "sha256",
+        digest.removeprefix("sha256:").lower(),
+        hosts,
+        size_bytes=size,
+        build=match.group("build"),
+    )
+
+
+def _netbsd(identity: IsoIdentity) -> ReleaseArtifact:
+    if (
+        identity.product_id != "netbsd"
+        or identity.edition != "installer"
+        or identity.channel != "release"
+    ):
+        raise ProviderError("Only NetBSD release installer ISOs are supported.")
+    if identity.architecture not in {"amd64", "i386"}:
+        raise ProviderError("This NetBSD architecture is not supported.")
+    host = "cdn.netbsd.org"
+    client = SafeHttpClient(frozenset({host}))
+    root = f"https://{host}/pub/NetBSD/"
+    listing = _text(client, root)
+    versions = set(re.findall(r'href="NetBSD-(\d+(?:\.\d+)+)/"', listing, re.IGNORECASE))
+    if not versions:
+        raise ProviderError("The official NetBSD directory contains no stable release.")
+    version = max(versions, key=lambda value: tuple(int(part) for part in value.split(".")))
+    filename = f"NetBSD-{version}-{identity.architecture}.iso"
+    base = f"{root}NetBSD-{version}/images/"
+    checksum = _checksum(_text(client, base + "SHA512"), filename, "sha512")
+    return _artifact(
+        identity,
+        version,
+        filename,
+        base + filename,
+        "sha512",
+        checksum,
+        {host},
     )

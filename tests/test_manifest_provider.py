@@ -74,6 +74,21 @@ def test_manifest_provider_detects_without_executing_code() -> None:
     )
 
 
+def test_manifest_provider_normalizes_x86_dash_64_architecture() -> None:
+    value = manifest()
+    value["capabilities"]["architectures"] = ["x86_64"]  # type: ignore[index]
+    value["detection"][0]["regex"] = (  # type: ignore[index]
+        r"^example-(?P<edition>desktop|paid)-(?P<version>[0-9.]+)-"
+        r"(?P<architecture>x86-64)\.iso$"
+    )
+    value["detection"][0]["identity"]["architecture"] = "$group:architecture"  # type: ignore[index]
+
+    detected = ManifestProvider(value).detect(Path("example-desktop-2.1-x86-64.iso"))
+
+    assert detected is not None and detected.identity is not None
+    assert detected.identity.architecture == "x86_64"
+
+
 def test_manifest_detection_regex_has_a_runtime_timeout() -> None:
     value = manifest()
     value["detection"] = [

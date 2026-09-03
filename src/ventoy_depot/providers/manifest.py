@@ -42,6 +42,10 @@ class ManifestProvider(Provider):
             tuple[str, str, str | None, str | None, str, str, str | None]
         ] = set()
 
+    @property
+    def products(self) -> tuple[str, ...]:
+        return self._products
+
     def detect(self, path: Path) -> DetectedIso | None:
         for expression, rule in self._rules:
             try:
@@ -417,9 +421,13 @@ def _optional(value: Any, *, lower: bool = True) -> str | None:
 
 
 def _architecture(value: str) -> str:
-    return {"64bit": "x86_64", "64-bit": "x86_64", "x64": "x86_64", "all": "amd64"}.get(
-        value.lower(), value.lower()
-    )
+    return {
+        "64bit": "x86_64",
+        "64-bit": "x86_64",
+        "x64": "x86_64",
+        "x86-64": "x86_64",
+        "all": "amd64",
+    }.get(value.lower(), value.lower())
 
 
 def _format_url(template: str, values: dict[str, str]) -> str:

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from ventoy_depot.models import IsoIdentity
 from ventoy_depot.providers import resolvers
 
@@ -42,6 +44,65 @@ def test_pop_os_uses_official_variant_api(monkeypatch) -> None:
     assert artifact.checksum == "b" * 64
 
 
+@pytest.mark.parametrize(
+    ("edition", "flavor", "directory", "filename", "checksum_name"),
+    [
+        (
+            "xfce",
+            "live",
+            "Spins",
+            "Fedora-Xfce-Live-44-1.7.x86_64.iso",
+            "Fedora-Spins-44-1.7-x86_64-CHECKSUM",
+        ),
+        (
+            "silverblue",
+            "ostree",
+            "Silverblue",
+            "Fedora-Silverblue-ostree-x86_64-44-1.7.iso",
+            "Fedora-Silverblue-44-1.7-x86_64-CHECKSUM",
+        ),
+    ],
+)
+def test_fedora_resolver_supports_official_spins_and_silverblue(
+    monkeypatch,
+    edition: str,
+    flavor: str,
+    directory: str,
+    filename: str,
+    checksum_name: str,
+) -> None:
+    digest = "c" * 64
+    root = "https://dl.fedoraproject.org/pub/fedora/linux/releases/"
+    base = f"{root}44/{directory}/x86_64/iso/"
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, url: str) -> bytes:
+            if url == root:
+                return b'<a href="43/">43</a><a href="44/">44</a>'
+            if url == base:
+                return (
+                    f'<a href="{filename}">{filename}</a>'
+                    f'<a href="{checksum_name}">{checksum_name}</a>'
+                ).encode()
+            assert url == base + checksum_name
+            return f"SHA256 ({filename}) = {digest}\n".encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "fedora", "fedora", edition, flavor, "stable", "x86_64", None, "43", "1.1"
+    )
+
+    artifact = resolvers.resolve_release("fedora", installed)
+
+    assert artifact.filename == filename
+    assert artifact.checksum == digest
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()
+
+
 def test_gparted_resolver_uses_official_sha256_list(monkeypatch) -> None:
     filename = "gparted-live-1.8.1-6-amd64.iso"
     digest = "c" * 64
@@ -60,6 +121,187 @@ def test_gparted_resolver_uses_official_sha256_list(monkeypatch) -> None:
     assert artifact.filename == filename
     assert artifact.checksum == digest
     assert artifact.download_url.startswith("https://downloads.sourceforge.net/project/gparted/")
+
+
+def test_netboot_xyz_resolver_uses_github_asset_digest(monkeypatch) -> None:
+    digest = "5" * 64
+    payload = {
+        "tag_name": "3.0.2",
+        "assets": [
+            {
+                "name": "netboot.xyz-arm64.iso",
+                "browser_download_url": (
+                    "https://github.com/netbootxyz/netboot.xyz/releases/download/3.0.2/"
+                    "netboot.xyz-arm64.iso"
+                ),
+                "digest": f"sha256:{digest}",
+                "size": 42,
+            }
+        ],
+    }
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, url: str) -> bytes:
+            assert url == "https://api.github.com/repos/netbootxyz/netboot.xyz/releases/latest"
+            return json.dumps(payload).encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "netboot-xyz", "netboot-xyz", "standard", None, "stable", "arm64", None, None, None
+    )
+    artifact = resolvers.resolve_release("netboot-xyz", installed)
+
+    assert artifact.version == "3.0.2"
+    assert artifact.filename == "netboot.xyz-arm64.iso"
+    assert artifact.size_bytes == 42
+    assert artifact.checksum == digest
+
+
+def test_gentoo_resolver_uses_latest_autobuild_sha256(monkeypatch) -> None:
+    filename = "install-amd64-minimal-20260830T151604Z.iso"
+    digest = "6" * 64
+    base = "https://distfiles.gentoo.org/releases/amd64/autobuilds/current-install-amd64-minimal/"
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, url: str) -> bytes:
+            if url == base:
+                return b"install-amd64-minimal-20260823T151604Z.iso\n" + filename.encode()
+            assert url == base + filename + ".sha256"
+            return (
+                "-----BEGIN PGP SIGNED MESSAGE-----\nHash: SHA512\n\n"
+                f"# SHA256 HASH\n{digest}  {filename}\n"
+            ).encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "gentoo", "gentoo", "minimal", None, "stable", "amd64", None, "20260823T151604Z", None
+    )
+    artifact = resolvers.resolve_release("gentoo", installed)
+
+    assert artifact.version == "20260830T151604Z"
+    assert artifact.filename == filename
+    assert artifact.download_url == base + filename
+    assert artifact.checksum == digest
+
+
+def test_hirens_resolver_uses_official_page_metadata(monkeypatch) -> None:
+    digest = "7" * 64
+    page = f"""
+        <h2>Hiren&#8217;s BootCD PE x64 (v1.0.8)</h2>
+        <a href=\"https://www.hirensbootcd.org/files/HBCD_PE_x64.iso\">ISO</a>
+        <p>File size (3291686912 bytes)</p>
+        <p>ISO SHA-256</p><code>{digest}</code>
+    """
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, url: str) -> bytes:
+            assert url == "https://www.hirensbootcd.org/download/"
+            return page.encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "hirens-bootcd-pe",
+        "hirens-bootcd-pe",
+        "pe",
+        None,
+        "stable",
+        "x86_64",
+        None,
+        None,
+        None,
+    )
+    artifact = resolvers.resolve_release("hirens-bootcd-pe", installed)
+
+    assert artifact.version == "1.0.8"
+    assert artifact.filename == "HBCD_PE_x64.iso"
+    assert artifact.size_bytes == 3291686912
+    assert artifact.checksum == digest
+
+
+def test_shredos_resolver_preserves_architecture_and_image_variant(monkeypatch) -> None:
+    filename = "shredos-2025.11_31_i686_v0.42_20260716_lite_plus-partition.iso"
+    digest = "8" * 64
+    payload = {
+        "assets": [
+            {
+                "name": filename,
+                "browser_download_url": (
+                    "https://github.com/PartialVolume/shredos.x86_64/releases/download/"
+                    f"v2025.11_31_x86-64_0.42/{filename}"
+                ),
+                "digest": f"sha256:{digest}",
+                "size": 123,
+            }
+        ]
+    }
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, url: str) -> bytes:
+            assert url == (
+                "https://api.github.com/repos/PartialVolume/shredos.x86_64/releases/latest"
+            )
+            return json.dumps(payload).encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "shredos",
+        "shredos",
+        "lite",
+        "plus-partition",
+        "stable",
+        "i686",
+        None,
+        "2025.11_30",
+        "0.41_20260601",
+    )
+    artifact = resolvers.resolve_release("shredos", installed)
+
+    assert artifact.filename == filename
+    assert artifact.version == "2025.11_31"
+    assert artifact.build == "0.42_20260716"
+    assert artifact.checksum == digest
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()
+
+
+def test_netbsd_resolver_uses_latest_release_sha512(monkeypatch) -> None:
+    filename = "NetBSD-11.0-amd64.iso"
+    digest = "9" * 128
+    root = "https://cdn.netbsd.org/pub/NetBSD/"
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, url: str) -> bytes:
+            if url == root:
+                return b'<a href="NetBSD-10.1/">old</a><a href="NetBSD-11.0/">new</a>'
+            assert url == root + "NetBSD-11.0/images/SHA512"
+            return f"SHA512 ({filename}) = {digest}\n".encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "netbsd", "netbsd", "installer", None, "release", "amd64", None, "10.1", None
+    )
+    artifact = resolvers.resolve_release("netbsd", installed)
+
+    assert artifact.version == "11.0"
+    assert artifact.filename == filename
+    assert artifact.download_url == root + f"NetBSD-11.0/images/{filename}"
+    assert artifact.checksum_algorithm == "sha512"
+    assert artifact.checksum == digest
 
 
 def test_cachyos_resolver_uses_latest_matching_official_directory(monkeypatch) -> None:
