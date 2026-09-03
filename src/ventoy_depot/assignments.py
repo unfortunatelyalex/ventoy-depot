@@ -9,6 +9,7 @@ from typing import Any
 
 from .iso import sha256_file
 from .models import IsoIdentity
+from .security import SecurityError, safe_subdirectory
 
 
 class AssignmentError(RuntimeError):
@@ -39,7 +40,13 @@ class AssignmentCatalog:
         relative = self._relative(iso_path)
         records = self._records()
         records[relative] = Assignment(relative, sha256_file(iso_path), identity)
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            directory = safe_subdirectory(self.mount_path, ".ventoy-depot")
+        except SecurityError as error:
+            raise AssignmentError(str(error)) from error
+        self.path = directory / "catalog.json"
+        if self.path.is_symlink():
+            raise AssignmentError("Symlinked assignment catalogs are not allowed.")
         document = {
             "schema_version": 1,
             "assignments": [
@@ -66,6 +73,18 @@ class AssignmentCatalog:
             raise
 
     def _records(self) -> dict[str, Assignment]:
+        directory = self.path.parent
+        if directory.exists():
+            if directory.is_symlink():
+                raise AssignmentError("Symlinked metadata directories are not allowed.")
+            try:
+                directory.resolve(strict=True).relative_to(self.mount_path)
+            except ValueError as error:
+                raise AssignmentError(
+                    "Assignment catalog escapes the Ventoy mountpoint."
+                ) from error
+        if self.path.is_symlink():
+            raise AssignmentError("Symlinked assignment catalogs are not allowed.")
         if not self.path.exists():
             return {}
         try:
@@ -80,7 +99,7 @@ class AssignmentCatalog:
                 )
                 for item in payload["assignments"]
             }
-        except (OSError, KeyError, TypeError, json.JSONDecodeError) as error:
+        except (OSError, AttributeError, KeyError, TypeError, json.JSONDecodeError) as error:
             raise AssignmentError("Assignment catalog is invalid.") from error
 
     def _relative(self, path: Path) -> str:

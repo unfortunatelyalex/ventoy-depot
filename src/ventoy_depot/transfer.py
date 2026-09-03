@@ -13,14 +13,24 @@ from pathlib import Path
 from .devices import revalidate_device
 from .models import Device, PlanItem, UpdateAction, VerificationLevel
 from .network import SafeHttpClient
-from .security import SecurityError, safe_filename
+from .security import (
+    SecurityError,
+    safe_filename,
+    safe_subdirectory,
+    validate_signer_fingerprints,
+)
 
 
 class TransferError(RuntimeError):
     pass
 
 
+class TransferCancelled(TransferError):
+    pass
+
+
 Progress = Callable[[str, int, int], None]
+CancelCheck = Callable[[], bool]
 
 
 def apply_item(
@@ -29,6 +39,7 @@ def apply_item(
     cache_dir: Path | None = None,
     trusted_keyring: Path | None = None,
     device: Device | None = None,
+    cancelled: CancelCheck | None = None,
 ) -> Path:
     artifact = item.target
     if artifact is None or item.local.identity is None:
@@ -61,9 +72,23 @@ def apply_item(
     staging.mkdir(parents=True, exist_ok=True)
     downloaded = staging / f"{artifact.filename}.download"
     partial = destination.with_name(f"{destination.name}.partial")
+    checked_progress = _checked_progress(progress, cancelled)
     try:
-        _download(client, artifact.download_url, downloaded, artifact.size_bytes, progress)
-        _verify(downloaded, artifact.checksum_algorithm, artifact.checksum)
+        _raise_if_cancelled(cancelled)
+        _download(client, artifact.download_url, downloaded, artifact.size_bytes, checked_progress)
+        try:
+            _verify(
+                downloaded,
+                artifact.checksum_algorithm,
+                artifact.checksum,
+                cancelled=cancelled,
+                progress=checked_progress,
+                stage="download-verify",
+            )
+        except TransferError:
+            downloaded.unlink(missing_ok=True)
+            downloaded.with_suffix(downloaded.suffix + ".json").unlink(missing_ok=True)
+            raise
         if artifact.verification_level == VerificationLevel.SIGNED:
             if trusted_keyring is None:
                 raise TransferError("Signed artifact requires a trusted provider keyring.")
@@ -76,13 +101,23 @@ def apply_item(
                 trusted_keyring,
                 artifact.signer_fingerprints,
             )
-        if progress:
-            progress("download-verify", downloaded.stat().st_size, downloaded.stat().st_size)
+        _raise_if_cancelled(cancelled)
         revalidate_device(device)
         if shutil.disk_usage(device_root).free < downloaded.stat().st_size:
             raise TransferError("Insufficient free space on the Ventoy drive before copying.")
-        _copy(downloaded, partial, progress)
-        _verify(partial, artifact.checksum_algorithm, artifact.checksum)
+        _copy(downloaded, partial, checked_progress)
+        _verify(
+            partial,
+            artifact.checksum_algorithm,
+            artifact.checksum,
+            cancelled=cancelled,
+            progress=checked_progress,
+            stage="copy-verify",
+        )
+        _raise_if_cancelled(cancelled)
+        revalidate_device(device)
+        if destination.exists():
+            raise TransferError(f"Target ISO already exists: {destination.name}")
         _fsync_file(partial)
         os.replace(partial, destination)
         _fsync_directory(destination.parent)
@@ -90,7 +125,13 @@ def apply_item(
             _trash(item.local.path, device_root)
         return destination
     except Exception:
-        partial.unlink(missing_ok=True)
+        if partial.exists():
+            try:
+                revalidate_device(device)
+            except Exception:
+                pass
+            else:
+                partial.unlink(missing_ok=True)
         raise
     finally:
         if temporary_context is not None:
@@ -115,36 +156,57 @@ def _download(
     validator_path = target.with_suffix(target.suffix + ".json")
     validator = _load_download_validator(validator_path)
     existing = target.stat().st_size if target.exists() and validator else 0
+    available = shutil.disk_usage(target.parent).free
+    maximum_size = existing + available
+    if expected_size is not None and existing == expected_size:
+        if progress:
+            progress("download", existing, expected_size)
+        return
+    if expected_size is not None and existing > expected_size:
+        target.unlink(missing_ok=True)
+        validator_path.unlink(missing_ok=True)
+        existing = 0
+        validator = None
     headers: dict[str, str] = {}
     if existing and validator is not None:
         headers["Range"] = f"bytes={existing}-"
         headers["If-Range"] = validator
     response = client.open(url, headers)
-    status = getattr(response, "status", 200)
-    mode = "ab" if existing and status == 206 else "wb"
-    completed = existing if mode == "ab" else 0
-    total = expected_size or completed + int(response.headers.get("Content-Length", 0))
-    if total and shutil.disk_usage(target.parent).free < max(total - completed, 0):
+    try:
+        status = getattr(response, "status", 200)
+        mode = "ab" if existing and status == 206 else "wb"
+        completed = existing if mode == "ab" else 0
+        total = expected_size or completed + int(response.headers.get("Content-Length", 0))
+        if total and shutil.disk_usage(target.parent).free < max(total - completed, 0):
+            raise TransferError("Insufficient free space in the download staging directory.")
+        current_validator = response.headers.get("ETag") or response.headers.get("Last-Modified")
+        if mode == "ab" and current_validator and current_validator != validator:
+            target.unlink(missing_ok=True)
+            validator_path.unlink(missing_ok=True)
+            response.close()
+            return _download(client, url, target, expected_size, progress)
+        if current_validator:
+            validator_path.write_text(
+                json.dumps({"validator": current_validator}) + "\n", encoding="utf-8"
+            )
+        else:
+            validator_path.unlink(missing_ok=True)
+        with target.open(mode) as output:
+            while block := response.read(1024 * 1024):
+                if completed + len(block) > maximum_size:
+                    raise TransferError(
+                        "Download exceeds the available space in the staging directory."
+                    )
+                completed += len(block)
+                if expected_size is not None and completed > expected_size:
+                    raise TransferError("Download exceeded its advertised size.")
+                output.write(block)
+                if progress:
+                    progress("download", completed, total)
+            output.flush()
+            os.fsync(output.fileno())
+    finally:
         response.close()
-        raise TransferError("Insufficient free space in the download staging directory.")
-    current_validator = response.headers.get("ETag") or response.headers.get("Last-Modified")
-    if current_validator:
-        validator_path.write_text(
-            json.dumps({"validator": current_validator}) + "\n", encoding="utf-8"
-        )
-    else:
-        validator_path.unlink(missing_ok=True)
-    with target.open(mode) as output:
-        while block := response.read(1024 * 1024):
-            completed += len(block)
-            if expected_size is not None and completed > expected_size:
-                raise TransferError("Download exceeded its advertised size.")
-            output.write(block)
-            if progress:
-                progress("download", completed, total)
-        output.flush()
-        os.fsync(output.fileno())
-    response.close()
     if expected_size is not None and completed != expected_size:
         raise TransferError("Download size does not match provider metadata.")
 
@@ -170,13 +232,27 @@ def _copy(source: Path, target: Path, progress: Progress | None) -> None:
         os.fsync(outgoing.fileno())
 
 
-def _verify(path: Path, algorithm: str, expected: str) -> None:
+def _verify(
+    path: Path,
+    algorithm: str,
+    expected: str,
+    *,
+    cancelled: CancelCheck | None = None,
+    progress: Progress | None = None,
+    stage: str = "verify",
+) -> None:
     if algorithm not in {"sha256", "sha512"}:
         raise TransferError("Only SHA-256 and SHA-512 are accepted.")
     digest = hashlib.new(algorithm)
+    total = path.stat().st_size
+    completed = 0
     with path.open("rb") as source:
         for block in iter(lambda: source.read(1024 * 1024), b""):
+            _raise_if_cancelled(cancelled)
             digest.update(block)
+            completed += len(block)
+            if progress:
+                progress(stage, completed, total)
     if not expected or digest.hexdigest().lower() != expected.lower():
         raise TransferError("Artifact checksum does not match official metadata.")
 
@@ -187,6 +263,10 @@ def _verify_openpgp(
     keyring: Path,
     fingerprints: tuple[str, ...],
 ) -> None:
+    try:
+        validate_signer_fingerprints(fingerprints)
+    except SecurityError as error:
+        raise TransferError(str(error)) from error
     executable = shutil.which("gpgv")
     if executable is None:
         hint = "Install GnuPG (for example: apt install gpgv)."
@@ -226,8 +306,7 @@ def _verify_openpgp(
 
 def _trash(path: Path, root: Path) -> Path:
     _within(root, path)
-    trash = root / ".ventoy-depot" / "trash"
-    trash.mkdir(parents=True, exist_ok=True)
+    trash = safe_subdirectory(root, ".ventoy-depot", "trash")
     candidate = trash / path.name
     index = 1
     while candidate.exists():
@@ -274,3 +353,17 @@ def _fsync_directory(path: Path) -> None:
             os.fsync(descriptor)
         finally:
             os.close(descriptor)
+
+
+def _checked_progress(progress: Progress | None, cancelled: CancelCheck | None) -> Progress:
+    def update(stage: str, completed: int, total: int) -> None:
+        _raise_if_cancelled(cancelled)
+        if progress:
+            progress(stage, completed, total)
+
+    return update
+
+
+def _raise_if_cancelled(cancelled: CancelCheck | None) -> None:
+    if cancelled is not None and cancelled():
+        raise TransferCancelled("Update cancelled by the user.")

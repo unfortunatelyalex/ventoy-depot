@@ -1,7 +1,9 @@
 # Recovery
 
 - A `.partial` file is never a completed ISO and can be removed after Ventoy Depot is
-  closed. The application removes it automatically after handled failures.
+  closed. The application removes it after handled failures only when it can confirm that
+  the same Ventoy device is still mounted; after removal or replacement of the drive, clean
+  up the original device manually when it is safely reconnected.
 - A `.download` file in the configured cache can be retained for a validated HTTP
   resume. Its ETag or Last-Modified validator is stored beside it.
 - Explicitly replaced images are moved to `.ventoy-depot/trash`. Move the desired file

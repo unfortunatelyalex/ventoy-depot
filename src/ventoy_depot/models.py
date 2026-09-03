@@ -54,6 +54,7 @@ class ReleaseArtifact:
     signature_url: str | None
     signer_fingerprints: tuple[str, ...]
     allowed_hosts: frozenset[str]
+    identity: IsoIdentity | None = None
 
     @property
     def verification_level(self) -> VerificationLevel:
@@ -140,10 +141,31 @@ def is_newer_version(candidate: str, installed: str | None) -> bool:
         return _numeric_key(candidate) > _numeric_key(installed)
 
 
-def _numeric_key(value: str) -> tuple[tuple[int, int | str], ...]:
+def _numeric_key(value: str) -> tuple[tuple[int, ...], int, tuple[str, ...]]:
     import re
 
-    return tuple(
-        (0, int(part)) if part.isdigit() else (1, part.lower())
-        for part in re.findall(r"\d+|[A-Za-z]+", value)
+    match = re.match(r"^\D*(\d+(?:[._-]\d+)*)", value)
+    if match is None:
+        release = (0,) * 8
+        suffix = value.lower()
+    else:
+        numbers = tuple(int(part) for part in re.findall(r"\d+", match.group(1)))
+        release = (numbers + (0,) * 8)[:8]
+        suffix = value[match.end() :].strip("._-").lower()
+    prerelease_rank = 0
+    for marker, rank in (
+        ("dev", -4),
+        ("alpha", -3),
+        ("a", -3),
+        ("beta", -2),
+        ("b", -2),
+        ("rc", -1),
+        ("pre", -1),
+    ):
+        if suffix.startswith(marker):
+            prerelease_rank = rank
+            break
+    tokens = tuple(
+        part.zfill(20) if part.isdigit() else part for part in re.findall(r"\d+|[a-z]+", suffix)
     )
+    return release, prerelease_rank, tokens

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from dataclasses import asdict, dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -33,17 +35,25 @@ class RunReport:
         )
 
     def write(self, path: Path) -> None:
-        path.write_text(
-            json.dumps(
-                {
-                    "schema_version": 1,
-                    "plan_id": self.plan_id,
-                    "successful": self.successful,
-                    "results": [asdict(result) for result in self.results],
-                },
-                ensure_ascii=False,
-                indent=2,
-            )
-            + "\n",
-            encoding="utf-8",
+        document = json.dumps(
+            {
+                "schema_version": 1,
+                "plan_id": self.plan_id,
+                "successful": self.successful,
+                "results": [asdict(result) for result in self.results],
+            },
+            ensure_ascii=False,
+            indent=2,
         )
+        descriptor, temporary_name = tempfile.mkstemp(
+            prefix="report.", suffix=".tmp", dir=path.parent
+        )
+        try:
+            with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+                output.write(document + "\n")
+                output.flush()
+                os.fsync(output.fileno())
+            os.replace(temporary_name, path)
+        except Exception:
+            Path(temporary_name).unlink(missing_ok=True)
+            raise

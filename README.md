@@ -1,9 +1,10 @@
 # Ventoy Depot
 
 Ventoy Depot is a safe, extensible TUI and read-only CLI for discovering, checking,
-downloading, and managing Linux and publicly available Windows ISOs on Ventoy drives.
-It supports Linux and Windows, and never writes to a drive merely
-because it is removable or happens to be `/dev/sdb1`.
+downloading, and managing Linux, BSD, rescue and public installation ISOs on Ventoy
+drives. The application runs on Linux and Windows. Windows 11 media can be recognized
+and locally verified; automatic Microsoft download-link acquisition is not implemented yet.
+It never writes to a drive merely because it is removable or happens to be `/dev/sdb1`.
 
 > Ventoy Depot is an independent community project. It is not affiliated with,
 > endorsed by, or supported by the Ventoy project.
@@ -15,10 +16,11 @@ detection, a structured update planner, a read-only automation CLI and a transac
 transfer pipeline. The interactive TUI remains the only place where writes can be
 confirmed.
 
-The update dialog is explicit. After confirmation, source lookups, downloads, checksum
-validation, and USB copies run in the background; the TUI remains responsive and shows
-the active ISO and byte progress. The application does not overwrite an ISO that has the
-same target filename, preventing a failed or stale update from replacing an existing file.
+The update dialog is explicit. **Check updates** performs the official metadata lookups
+needed to construct the complete plan. After confirmation, downloads, checksum validation,
+and USB copies run in the background; the TUI remains responsive and shows the active ISO
+and byte progress. The application does not overwrite an ISO that has the same target
+filename, preventing a failed or stale update from replacing an existing file.
 
 To update ISOs in the TUI:
 
@@ -33,10 +35,25 @@ The mapping is stored in `.ventoy-depot/catalog.json` on that drive and is bound
 ISO's SHA-256 hash, so replacing or modifying the file invalidates stale mappings.
 
 Automatic official resolution currently covers Arch Linux, Ubuntu, Debian, Fedora
-Workstation/Server/KDE, Linux Mint stable editions, EndeavourOS, Omarchy, Pop!_OS,
-Vanilla OS and the free Zorin OS editions. Manjaro stays disabled when its
-official metadata endpoint is unavailable. A variant without an exact official
-mapping remains visibly skipped; it is never silently converted to another edition.
+Workstation/Server/KDE, Alpine Linux, Rocky Linux, AlmaLinux, Linux Mint stable editions,
+EndeavourOS, CachyOS, Clonezilla, GParted Live, Kali Linux, NixOS, SystemRescue, openSUSE
+Tumbleweed, FreeBSD, Omarchy, Pop!_OS, Proxmox, Rescuezilla, Vanilla OS and the free Zorin
+OS editions. Grml, Qubes OS, Tails and Memtest86+ are recognized but remain
+download-disabled until their mirror, signature-chain or archive-extraction requirements
+can be represented safely. A variant without an exact official mapping remains visibly
+skipped; it is never silently converted.
+
+### Custom declarative providers
+
+Local JSON manifests are disabled by default. To activate one explicitly, add its absolute
+path to `local_manifests` in the platform-specific `config.json`, for example:
+
+```json
+{"schema_version": 1, "local_manifests": ["/absolute/path/my-provider.json"]}
+```
+
+Each file is schema- and security-validated, cannot execute code, cannot replace a curated
+provider ID, is labeled `custom`, and may only add a newly verified ISO.
 
 ## Installation
 

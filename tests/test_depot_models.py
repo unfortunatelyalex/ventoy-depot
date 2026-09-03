@@ -1,3 +1,4 @@
+import builtins
 from pathlib import Path
 
 from ventoy_depot.models import (
@@ -7,6 +8,7 @@ from ventoy_depot.models import (
     ReleaseArtifact,
     UpdateAction,
     VerificationLevel,
+    is_newer_version,
 )
 
 
@@ -58,3 +60,15 @@ def test_signed_artifact_requires_signature_and_fingerprint() -> None:
         frozenset({"example.org"}),
     )
     assert artifact.verification_level == VerificationLevel.SIGNED
+
+
+def test_version_fallback_orders_stable_after_release_candidate(monkeypatch) -> None:
+    real_import = builtins.__import__
+
+    def without_packaging(name: str, *args: object, **kwargs: object) -> object:
+        if name == "packaging.version":
+            raise ImportError
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", without_packaging)
+    assert is_newer_version("26.1.0", "26.1.0-rc3")

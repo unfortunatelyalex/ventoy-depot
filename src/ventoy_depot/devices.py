@@ -15,7 +15,7 @@ class DeviceError(RuntimeError):
 
 
 def is_ventoy_root(path: Path, label: str = "") -> tuple[bool, str]:
-    if "ventoy" in label.lower():
+    if label.strip().casefold() == "ventoy":
         return True, "volume-label"
     if (path / "ventoy").is_dir():
         return True, "ventoy-directory"
@@ -72,29 +72,48 @@ def _linux_devices() -> list[Device]:
         ],
         "Could not run lsblk to inspect removable drives.",
     )
+    if not isinstance(output, dict) or not isinstance(output.get("blockdevices"), list):
+        raise DeviceError("lsblk returned an unexpected response.")
     devices: list[Device] = []
-    for disk in output.get("blockdevices", []):
+    for disk in output["blockdevices"]:
+        if not isinstance(disk, dict):
+            raise DeviceError("lsblk returned an invalid device record.")
         eligible = bool(disk.get("rm") or disk.get("hotplug") or disk.get("tran") == "usb")
         if not eligible:
             continue
-        for partition in disk.get("children") or [disk]:
+        children = disk.get("children")
+        if children is not None and not isinstance(children, list):
+            raise DeviceError("lsblk returned invalid partition data.")
+        for partition in children or [disk]:
+            if not isinstance(partition, dict):
+                raise DeviceError("lsblk returned an invalid partition record.")
             mountpoint = partition.get("mountpoint")
-            if partition.get("type") not in {"part", "disk"} or not mountpoint:
+            if (
+                partition.get("type") not in {"part", "disk"}
+                or not isinstance(mountpoint, str)
+                or not mountpoint
+            ):
                 continue
             path = Path(mountpoint)
             label = partition.get("label") or ""
             valid, reason = is_ventoy_root(path, label)
             if not valid:
                 continue
+            stable = partition.get("uuid") or disk.get("serial")
+            if not isinstance(stable, str) or not stable.strip():
+                continue
             try:
                 free = shutil.disk_usage(path).free
             except OSError:
                 free = None
-            stable = partition.get("uuid") or disk.get("serial") or partition["path"]
+            partition_path = partition.get("path")
+            partition_name = partition.get("name")
+            if not isinstance(partition_path, str) or not isinstance(partition_name, str):
+                raise DeviceError("lsblk device record is missing its path or name.")
             devices.append(
                 Device(
                     str(stable),
-                    f"{partition['path']} ({label or partition['name']})",
+                    f"{partition_path} ({label or partition_name})",
                     path,
                     partition.get("size"),
                     free,
@@ -118,21 +137,35 @@ def _windows_devices() -> list[Device]:
         ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
         "Could not query USB volumes through PowerShell.",
     )
-    records = [output] if isinstance(output, dict) and "DriveLetter" in output else output or []
+    if isinstance(output, dict) and "DriveLetter" in output:
+        records = [output]
+    elif isinstance(output, list):
+        records = output
+    elif output in ({}, None):
+        records = []
+    else:
+        raise DeviceError("PowerShell returned an unexpected response.")
     devices: list[Device] = []
     for record in records:
-        path = Path(f"{record['DriveLetter']}:\\")
+        if not isinstance(record, dict):
+            raise DeviceError("PowerShell returned an invalid volume record.")
+        drive_letter = record.get("DriveLetter")
+        if not isinstance(drive_letter, str) or len(drive_letter) != 1:
+            raise DeviceError("PowerShell volume record has no valid drive letter.")
+        path = Path(f"{drive_letter}:\\")
         label = record.get("Label") or ""
         valid, reason = is_ventoy_root(path, label)
         if valid:
+            unique_id = record.get("UniqueId")
+            if not isinstance(unique_id, str) or not unique_id.strip():
+                continue
             try:
                 free = shutil.disk_usage(path).free
             except OSError:
                 free = None
-            identifier = str(record.get("UniqueId") or f"Disk {record['Disk']}")
             devices.append(
                 Device(
-                    identifier,
+                    unique_id,
                     f"{path} ({label or 'unlabelled'})",
                     path,
                     record.get("Size"),
