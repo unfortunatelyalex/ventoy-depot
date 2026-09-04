@@ -1074,4 +1074,20 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
         ),
         ProviderCapabilities(("community",), ("x86_64",), (), ("stable", "beta")),
     ),
+    FilenameProvider(
+        "kde-neon",
+        "KDE neon",
+        (
+            FilenameRule(
+                re.compile(
+                    r"neon-(?P<channel>user|testing|unstable)-(?P<edition>desktop)-"
+                    r"(?P<version>\d{8}-\d{4})\.iso$",
+                    re.I,
+                ),
+                "kde-neon",
+                default_architecture="x86_64",
+            ),
+        ),
+        ProviderCapabilities(("desktop",), ("x86_64",), (), ("user", "testing", "unstable")),
+    ),
 )

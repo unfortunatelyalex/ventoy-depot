@@ -48,6 +48,7 @@ BUILTIN_RESOLVER_IDS = frozenset(
         "truenas",
         "tails",
         "grml",
+        "kde-neon",
     }
 )
 
@@ -90,6 +91,7 @@ def resolve_release(provider_id: str, identity: IsoIdentity) -> ReleaseArtifact:
         "truenas": _truenas,
         "tails": _tails,
         "grml": _grml,
+        "kde-neon": _kde_neon,
     }
     try:
         resolver = resolvers[provider_id]
@@ -1405,3 +1407,43 @@ def _grml(identity: IsoIdentity) -> ReleaseArtifact:
     url = f"https://ftp-master.grml.org/{filename}"
     checksum = _checksum(_text(client, url + ".sha256"), filename, "sha256")
     return _artifact(identity, version, filename, url, "sha256", checksum, hosts)
+
+
+def _kde_neon(identity: IsoIdentity) -> ReleaseArtifact:
+    if identity.product_id != "kde-neon" or identity.edition != "desktop":
+        raise ProviderError("Only KDE neon desktop ISOs are supported.")
+    if identity.architecture != "x86_64" or identity.channel not in {
+        "user",
+        "testing",
+        "unstable",
+    }:
+        raise ProviderError("This KDE neon architecture or channel is not supported.")
+    hosts = {"files.kde.org", "ftp.gwdg.de"}
+    client = SafeHttpClient(frozenset(hosts))
+    base = f"https://files.kde.org/neon/images/desktop/{identity.channel}/current/"
+    listing = _text(client, base)
+    expression = re.compile(
+        rf"\b(neon-{re.escape(identity.channel)}-desktop-"
+        rf"(?P<version>\d{{8}}-\d{{4}})\.iso)\b",
+        re.IGNORECASE,
+    )
+    matches = list(expression.finditer(listing))
+    if not matches:
+        raise ProviderError("The KDE neon current directory lacks the selected channel ISO.")
+    match = max(matches, key=lambda item: item.group("version"))
+    filename, version = match.group(1), match.group("version")
+    mirror_base = (
+        "https://ftp.gwdg.de/pub/linux/kde/extrafiles/neon/images/desktop/"
+        f"{identity.channel}/{version}/"
+    )
+    checksum_name = filename.removesuffix(".iso") + ".sha256sum"
+    checksum = _checksum(_text(client, mirror_base + checksum_name), filename, "sha256")
+    return _artifact(
+        identity,
+        version,
+        filename,
+        mirror_base + filename,
+        "sha256",
+        checksum,
+        hosts,
+    )

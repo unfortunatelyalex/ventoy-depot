@@ -85,6 +85,8 @@ from ventoy_depot.providers.base import ProviderError
         ("Solus-GNOME-Release-2026-04-18.iso", "solus", "gnome", "x86_64"),
         ("TrueNAS-SCALE-25.10.7.iso", "truenas", "community", "x86_64"),
         ("TrueNAS-26.0.0-BETA.3.iso", "truenas", "community", "x86_64"),
+        ("neon-user-desktop-20260903-0454.iso", "kde-neon", "desktop", "x86_64"),
+        ("neon-testing-desktop-20260901-0146.iso", "kde-neon", "desktop", "x86_64"),
     ],
 )
 def test_variant_preserving_detection(

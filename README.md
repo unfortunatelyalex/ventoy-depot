@@ -45,7 +45,7 @@ it only to suggest a product; the user still confirms every identity field.
 Automatic official resolution currently covers Arch Linux, Ubuntu, Debian, Fedora
 Workstation/Server/KDE, Alpine Linux, Rocky Linux, AlmaLinux, Linux Mint stable editions,
 EndeavourOS, CachyOS, Clonezilla, Gentoo, GhostBSD, GParted Live, Grml, Haiku,
-Hiren's BootCD PE, Kali Linux,
+Hiren's BootCD PE, Kali Linux, KDE neon,
 netboot.xyz, NixOS, SystemRescue, openSUSE Tumbleweed, FreeBSD, Omarchy, Pop!_OS, PorteuX,
 Proxmox, Rescuezilla, Solus, TrueNAS Community Edition, Vanilla OS and the free Zorin OS
 editions and Tails. Qubes OS and Memtest86+ are recognized but remain

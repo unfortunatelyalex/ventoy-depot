@@ -596,6 +596,46 @@ def test_grml_resolver_uses_direct_official_master_and_sidecar(monkeypatch) -> N
     assert artifact.identity.variant_key() == installed.variant_key()
 
 
+def test_kde_neon_resolver_preserves_channel(monkeypatch) -> None:
+    filename = "neon-testing-desktop-20260901-0146.iso"
+    digest = "2" * 64
+    base = "https://files.kde.org/neon/images/desktop/testing/current/"
+    mirror = (
+        "https://ftp.gwdg.de/pub/linux/kde/extrafiles/neon/images/desktop/testing/20260901-0146/"
+    )
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, url: str) -> bytes:
+            if url == base:
+                return b"neon-testing-desktop-20260801-0001.iso\n" + filename.encode()
+            assert url == mirror + filename.removesuffix(".iso") + ".sha256sum"
+            return f"{digest}  {filename}\n".encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "kde-neon",
+        "kde-neon",
+        "desktop",
+        None,
+        "testing",
+        "x86_64",
+        None,
+        "20260801-0001",
+        None,
+    )
+    artifact = resolvers.resolve_release("kde-neon", installed)
+
+    assert artifact.version == "20260901-0146"
+    assert artifact.filename == filename
+    assert artifact.download_url == mirror + filename
+    assert artifact.checksum == digest
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()
+
+
 def test_cachyos_resolver_uses_latest_matching_official_directory(monkeypatch) -> None:
     filename = "cachyos-desktop-linux-260809.iso"
     digest = "f" * 64
