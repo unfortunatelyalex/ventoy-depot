@@ -725,6 +725,53 @@ def test_void_resolver_rejects_unpublished_i686_musl() -> None:
         resolvers.resolve_release("void-linux", identity)
 
 
+@pytest.mark.parametrize(
+    ("edition", "architecture", "filename"),
+    [
+        ("classic", "x86_64", "Mageia-10-x86_64.iso"),
+        ("gnome", "x86_64", "Mageia-10-Live-GNOME-x86_64.iso"),
+        ("plasma", "x86_64", "Mageia-10-Live-Plasma-x86_64.iso"),
+        ("xfce", "i686", "Mageia-10-Live-Xfce-i686.iso"),
+    ],
+)
+def test_mageia_resolver_preserves_medium_and_architecture(
+    monkeypatch, edition: str, architecture: str, filename: str
+) -> None:
+    digest = "5" * 128
+    root = "https://mirrors.kernel.org/mageia/iso/"
+    base = f"{root}10/{filename.removesuffix('.iso')}/"
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, url: str) -> bytes:
+            if url == root:
+                return b'<a href="9/">9</a><a href="10/">10</a>'
+            assert url == base + filename + ".sha512"
+            return f"{digest}  {filename}\n".encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "mageia", "mageia", edition, None, "stable", architecture, None, "9", None
+    )
+    artifact = resolvers.resolve_release("mageia", installed)
+
+    assert artifact.version == "10"
+    assert artifact.filename == filename
+    assert artifact.download_url == base + filename
+    assert artifact.checksum_algorithm == "sha512"
+    assert artifact.checksum == digest
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()
+
+
+def test_mageia_resolver_rejects_unpublished_i686_gnome() -> None:
+    identity = IsoIdentity("mageia", "mageia", "gnome", None, "stable", "i686", None, "9", None)
+    with pytest.raises(resolvers.ProviderError, match="x86_64 only"):
+        resolvers.resolve_release("mageia", identity)
+
+
 def test_cachyos_resolver_uses_latest_matching_official_directory(monkeypatch) -> None:
     filename = "cachyos-desktop-linux-260809.iso"
     digest = "f" * 64

@@ -164,6 +164,31 @@ def test_manifest_provider_resolves_checksum_list_without_python_plugin(monkeypa
     assert artifact.identity.variant_key() == installed.variant_key()
 
 
+def test_manifest_url_template_can_address_iso_named_directory(monkeypatch) -> None:
+    value = manifest()
+    source = value["release_sources"][0]  # type: ignore[index]
+    source["download"]["url_template"] = (  # type: ignore[index]
+        "https://downloads.example.test/{stem}/{filename}"
+    )
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, url: str) -> bytes:
+            assert url == "https://downloads.example.test/SHA256SUMS"
+            return f"{'a' * 64}  example-desktop-2.1-amd64.iso\n".encode()
+
+    monkeypatch.setattr("ventoy_depot.providers.manifest.SafeHttpClient", FakeClient)
+    artifact = ManifestProvider(value).resolve(
+        IsoIdentity("example", "example-live", "desktop", None, "stable", "amd64", None, "1", None)
+    )
+
+    assert artifact.download_url == (
+        "https://downloads.example.test/example-desktop-2.1-amd64/example-desktop-2.1-amd64.iso"
+    )
+
+
 def test_detection_only_manifest_variant_cannot_resolve() -> None:
     value = manifest()
     value["detection"][0]["downloadable"] = False  # type: ignore[index]

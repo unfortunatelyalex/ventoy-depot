@@ -147,6 +147,7 @@ _ASSIGNMENT_PROFILES = (
     ("KDE neon", "kde-neon", "kde-neon", "x86_64"),
     ("Parrot OS", "parrot-os", "parrot-os", "amd64"),
     ("Void Linux", "void-linux", "void-linux", "x86_64"),
+    ("Mageia", "mageia", "mageia", "x86_64"),
 )
 
 _VOLUME_PROFILE_HINTS = (

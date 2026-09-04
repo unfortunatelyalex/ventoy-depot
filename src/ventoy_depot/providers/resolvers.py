@@ -51,6 +51,7 @@ BUILTIN_RESOLVER_IDS = frozenset(
         "kde-neon",
         "parrot-os",
         "void-linux",
+        "mageia",
     }
 )
 
@@ -96,6 +97,7 @@ def resolve_release(provider_id: str, identity: IsoIdentity) -> ReleaseArtifact:
         "kde-neon": _kde_neon,
         "parrot-os": _parrot_os,
         "void-linux": _void_linux,
+        "mageia": _mageia,
     }
     try:
         resolver = resolvers[provider_id]
@@ -1520,4 +1522,37 @@ def _void_linux(identity: IsoIdentity) -> ReleaseArtifact:
         "sha256",
         _checksum(sums, filename, "sha256"),
         hosts,
+    )
+
+
+def _mageia(identity: IsoIdentity) -> ReleaseArtifact:
+    editions = {"classic", "gnome", "plasma", "xfce"}
+    if identity.product_id != "mageia" or identity.edition not in editions:
+        raise ProviderError("This Mageia image type is not supported.")
+    if identity.architecture not in {"x86_64", "i686"} or identity.channel != "stable":
+        raise ProviderError("This Mageia architecture or channel is not supported.")
+    if identity.edition in {"gnome", "plasma"} and identity.architecture != "x86_64":
+        raise ProviderError("This Mageia live desktop is published for x86_64 only.")
+    host = "mirrors.kernel.org"
+    client = SafeHttpClient(frozenset({host}))
+    root = f"https://{host}/mageia/iso/"
+    versions = re.findall(r'href=["\'](?P<version>\d+)/["\']', _text(client, root))
+    if not versions:
+        raise ProviderError("The official Mageia mirror contains no releases.")
+    version = str(max(map(int, versions)))
+    if identity.edition == "classic":
+        filename = f"Mageia-{version}-{identity.architecture}.iso"
+    else:
+        desktop = {"gnome": "GNOME", "plasma": "Plasma", "xfce": "Xfce"}[identity.edition]
+        filename = f"Mageia-{version}-Live-{desktop}-{identity.architecture}.iso"
+    base = f"{root}{version}/{filename.removesuffix('.iso')}/"
+    checksum = _checksum(_text(client, base + filename + ".sha512"), filename, "sha512")
+    return _artifact(
+        identity,
+        version,
+        filename,
+        base + filename,
+        "sha512",
+        checksum,
+        {host},
     )

@@ -221,6 +221,7 @@ def _template_values(
 ) -> dict[str, str]:
     return {
         "filename": filename,
+        "stem": filename.removesuffix(".iso"),
         "version": version,
         "build": groups.get("build") or "",
         "product": identity.product_id,

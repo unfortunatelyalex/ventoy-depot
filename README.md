@@ -47,7 +47,7 @@ Workstation/Server/KDE, Alpine Linux, Rocky Linux, AlmaLinux, Linux Mint stable 
 EndeavourOS, CachyOS, Clonezilla, Gentoo, GhostBSD, GParted Live, Grml, Haiku,
 Hiren's BootCD PE, Kali Linux, KDE neon,
 netboot.xyz, NixOS, SystemRescue, openSUSE Tumbleweed, FreeBSD, Omarchy, Parrot OS,
-Pop!_OS, PorteuX,
+Pop!_OS, PorteuX, Mageia,
 Proxmox, Rescuezilla, Solus, TrueNAS Community Edition, Void Linux, Vanilla OS and the free Zorin OS
 editions and Tails. Qubes OS and Memtest86+ are recognized but remain
 download-disabled until their mirror, signature-chain or archive-extraction requirements

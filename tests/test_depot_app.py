@@ -40,6 +40,7 @@ def test_assignment_profiles_use_supported_product_and_architecture_defaults() -
     assert profiles["Zorin OS"][-1] == "x86_64"
     assert profiles["Parrot OS"] == ["parrot-os", "parrot-os", "amd64"]
     assert profiles["Void Linux"] == ["void-linux", "void-linux", "x86_64"]
+    assert profiles["Mageia"] == ["mageia", "mageia", "x86_64"]
 
 
 def test_tui_mounts_without_stylesheet_errors(monkeypatch) -> None:

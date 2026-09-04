@@ -91,6 +91,8 @@ from ventoy_depot.providers.base import ProviderError
         ("Parrot-spin-htb-7.3_amd64.iso", "parrot-os", "htb", "amd64"),
         ("void-live-x86_64-20250202-base.iso", "void-linux", "base", "x86_64"),
         ("void-live-aarch64-musl-20250202-xfce.iso", "void-linux", "xfce", "aarch64"),
+        ("Mageia-10-x86_64.iso", "mageia", "classic", "x86_64"),
+        ("Mageia-10-Live-Xfce-i686.iso", "mageia", "xfce", "i686"),
     ],
 )
 def test_variant_preserving_detection(

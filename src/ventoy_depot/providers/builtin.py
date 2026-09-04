@@ -1133,4 +1133,40 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
             ("glibc", "musl"),
         ),
     ),
+    FilenameProvider(
+        "mageia",
+        "Mageia",
+        (
+            FilenameRule(
+                re.compile(
+                    r"Mageia-(?P<version>\d+)-(?P<architecture>x86_64|i686)\.iso$",
+                    re.I,
+                ),
+                "mageia",
+                default_edition="classic",
+            ),
+            FilenameRule(
+                re.compile(
+                    r"Mageia-(?P<version>\d+)-Live-(?P<edition>GNOME|Plasma)-"
+                    r"(?P<architecture>x86_64)\.iso$",
+                    re.I,
+                ),
+                "mageia",
+            ),
+            FilenameRule(
+                re.compile(
+                    r"Mageia-(?P<version>\d+)-Live-(?P<edition>Xfce)-"
+                    r"(?P<architecture>x86_64|i686)\.iso$",
+                    re.I,
+                ),
+                "mageia",
+            ),
+        ),
+        ProviderCapabilities(
+            ("classic", "gnome", "plasma", "xfce"),
+            ("x86_64", "i686"),
+            (),
+            ("stable",),
+        ),
+    ),
 )
