@@ -304,6 +304,271 @@ def test_netbsd_resolver_uses_latest_release_sha512(monkeypatch) -> None:
     assert artifact.checksum == digest
 
 
+def test_porteux_resolver_preserves_desktop_and_uses_release_digest(monkeypatch) -> None:
+    filename = "porteux-2.8-current-xfce-4.20-x86_64.iso"
+    digest = "a" * 64
+    payload = {
+        "assets": [
+            {
+                "name": filename,
+                "browser_download_url": (
+                    "https://github.com/porteux/porteux/releases/download/v2.8/" + filename
+                ),
+                "digest": f"sha256:{digest}",
+                "size": 607125504,
+            }
+        ]
+    }
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, url: str) -> bytes:
+            assert url == "https://api.github.com/repos/porteux/porteux/releases/latest"
+            return json.dumps(payload).encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "porteux", "porteux", "xfce", None, "current", "x86_64", None, "2.7", "4.20"
+    )
+    artifact = resolvers.resolve_release("porteux", installed)
+
+    assert artifact.version == "2.8"
+    assert artifact.build == "4.20"
+    assert artifact.filename == filename
+    assert artifact.size_bytes == 607125504
+    assert artifact.checksum == digest
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()
+
+
+def test_ghostbsd_resolver_preserves_community_desktop(monkeypatch) -> None:
+    filename = "GhostBSD-26.1-R15.0p2-XFCE.iso"
+    digest = "b" * 64
+    url = f"https://download.ghostbsd.org/releases/amd64/26.1-R15.0p2/{filename}"
+    page = f'<a href="{url}">download</a>'
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, requested: str) -> bytes:
+            if requested == "https://www.ghostbsd.org/download":
+                return page.encode()
+            assert requested == url + ".sha256"
+            return f"SHA256 ({filename}) = {digest}\n".encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "ghostbsd",
+        "ghostbsd",
+        "xfce",
+        None,
+        "community",
+        "amd64",
+        None,
+        "25.02-R14.3p2",
+        None,
+    )
+    artifact = resolvers.resolve_release("ghostbsd", installed)
+
+    assert artifact.version == "26.1-R15.0p2"
+    assert artifact.filename == filename
+    assert artifact.download_url == url
+    assert artifact.checksum == digest
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()
+
+
+def test_ghostbsd_resolver_rejects_cross_channel_switch() -> None:
+    identity = IsoIdentity(
+        "ghostbsd", "ghostbsd", "xfce", None, "official", "amd64", None, None, None
+    )
+
+    with pytest.raises(resolvers.ProviderError, match="do not match"):
+        resolvers.resolve_release("ghostbsd", identity)
+
+
+def test_haiku_resolver_uses_official_page_checksum_and_cdn(monkeypatch) -> None:
+    filename = "haiku-r1beta6-x86_64-anyboot.iso"
+    digest = "c" * 64
+    page = f"{digest}  {filename}\n"
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, url: str) -> bytes:
+            assert url == "https://www.haiku-os.org/get-haiku/"
+            return page.encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "haiku", "haiku", "anyboot", None, "stable", "x86_64", None, "r1beta5", None
+    )
+    artifact = resolvers.resolve_release("haiku", installed)
+
+    assert artifact.version == "r1beta6"
+    assert artifact.filename == filename
+    assert artifact.download_url == ("https://haiku-release.cdn.haiku-os.org/r1beta6/" + filename)
+    assert artifact.checksum == digest
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()
+
+
+def test_solus_resolver_preserves_desktop_and_uses_sidecar(monkeypatch) -> None:
+    filename = "Solus-Plasma-Release-2026-04-18.iso"
+    digest = "d" * 64
+    url = f"https://downloads.getsol.us/isos/2026-04-18/{filename}"
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, requested: str) -> bytes:
+            if requested == "https://getsol.us/download/":
+                return f'<a href="{url}">{filename}</a>'.encode()
+            assert requested == url + ".sha256sum"
+            return f"{digest}  {filename}\n".encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "solus", "solus", "plasma", None, "stable", "x86_64", None, "2025-01-26", None
+    )
+    artifact = resolvers.resolve_release("solus", installed)
+
+    assert artifact.version == "2026-04-18"
+    assert artifact.filename == filename
+    assert artifact.download_url == url
+    assert artifact.checksum == digest
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()
+
+
+@pytest.mark.parametrize(
+    ("channel", "filename", "url"),
+    [
+        (
+            "stable",
+            "TrueNAS-SCALE-25.10.7.iso",
+            "https://download.sys.truenas.net/TrueNAS-SCALE-Goldeye/25.10.7/"
+            "TrueNAS-SCALE-25.10.7.iso",
+        ),
+        (
+            "beta",
+            "TrueNAS-26.0.0-BETA.3.iso",
+            "https://iso.sys.truenas.net/TrueNAS-26-BETA/26.0.0-BETA.3/TrueNAS-26.0.0-BETA.3.iso",
+        ),
+    ],
+)
+def test_truenas_resolver_preserves_release_channel(
+    monkeypatch, channel: str, filename: str, url: str
+) -> None:
+    digest = "e" * 64
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, requested: str) -> bytes:
+            if requested == "https://www.truenas.com/download-truenas-community-edition/":
+                return f'<a href="{url}">{filename}</a>'.encode()
+            assert requested == url + ".sha256"
+            return digest.encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "truenas", "truenas", "community", None, channel, "x86_64", None, None, None
+    )
+    artifact = resolvers.resolve_release("truenas", installed)
+
+    assert artifact.filename == filename
+    assert artifact.download_url == url
+    assert artifact.checksum == digest
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()
+
+
+def test_tails_resolver_uses_publisher_bound_iso_metadata(monkeypatch) -> None:
+    digest = "f" * 64
+    filename = "tails-amd64-7.12.iso"
+    url = f"https://download.tails.net/tails/stable/tails-amd64-7.12/{filename}"
+    payload = {
+        "installations": [
+            {
+                "version": "7.12",
+                "installation-paths": [
+                    {
+                        "type": "img",
+                        "target-files": [{"url": "https://example.invalid/tails.img"}],
+                    },
+                    {
+                        "type": "iso",
+                        "target-files": [{"url": url, "sha256": digest, "size": 123}],
+                    },
+                ],
+            }
+        ]
+    }
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, requested: str) -> bytes:
+            assert requested == "https://tails.net/install/v2/Tails/amd64/stable/latest.json"
+            return json.dumps(payload).encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity("tails", "tails", "iso", None, "stable", "amd64", None, "7.11", None)
+    artifact = resolvers.resolve_release("tails", installed)
+
+    assert artifact.version == "7.12"
+    assert artifact.filename == filename
+    assert artifact.download_url == url
+    assert artifact.size_bytes == 123
+    assert artifact.checksum == digest
+    assert "mirror.netcologne.de" in artifact.allowed_hosts
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()
+
+
+def test_tails_resolver_rejects_unbound_filename(monkeypatch) -> None:
+    payload = {
+        "installations": [
+            {
+                "version": "7.12",
+                "installation-paths": [
+                    {
+                        "type": "iso",
+                        "target-files": [
+                            {
+                                "url": "https://download.tails.net/tails/other.iso",
+                                "sha256": "f" * 64,
+                                "size": 123,
+                            }
+                        ],
+                    }
+                ],
+            }
+        ]
+    }
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, _url: str) -> bytes:
+            return json.dumps(payload).encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    identity = IsoIdentity("tails", "tails", "iso", None, "stable", "amd64", None, "7.11", None)
+
+    with pytest.raises(resolvers.ProviderError, match="not bound"):
+        resolvers.resolve_release("tails", identity)
+
+
 def test_cachyos_resolver_uses_latest_matching_official_directory(monkeypatch) -> None:
     filename = "cachyos-desktop-linux-260809.iso"
     digest = "f" * 64

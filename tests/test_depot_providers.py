@@ -75,6 +75,16 @@ from ventoy_depot.providers.base import ProviderError
         ),
         ("NetBSD-11.0-amd64.iso", "netbsd", "installer", "amd64"),
         ("NetBSD-11.0-i386.iso", "netbsd", "installer", "i386"),
+        ("porteux-2.8-current-xfce-4.20-x86_64.iso", "porteux", "xfce", "x86_64"),
+        ("GhostBSD-26.1-R15.0p2.iso", "ghostbsd", "mate", "amd64"),
+        ("GhostBSD-26.1-R15.0p2-XFCE.iso", "ghostbsd", "xfce", "amd64"),
+        ("GhostBSD-26.1-R15.0p2-GERSHWIN.iso", "ghostbsd", "gershwin", "amd64"),
+        ("haiku-r1beta6-x86_64-anyboot.iso", "haiku", "anyboot", "x86_64"),
+        ("haiku-r1beta6-x86_gcc2h-anyboot.iso", "haiku", "anyboot", "x86_gcc2h"),
+        ("Solus-Budgie-Release-2026-04-18.iso", "solus", "budgie", "x86_64"),
+        ("Solus-GNOME-Release-2026-04-18.iso", "solus", "gnome", "x86_64"),
+        ("TrueNAS-SCALE-25.10.7.iso", "truenas", "community", "x86_64"),
+        ("TrueNAS-26.0.0-BETA.3.iso", "truenas", "community", "x86_64"),
     ],
 )
 def test_variant_preserving_detection(

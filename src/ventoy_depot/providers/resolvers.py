@@ -41,6 +41,12 @@ BUILTIN_RESOLVER_IDS = frozenset(
         "hirens-bootcd-pe",
         "shredos",
         "netbsd",
+        "porteux",
+        "ghostbsd",
+        "haiku",
+        "solus",
+        "truenas",
+        "tails",
     }
 )
 
@@ -76,6 +82,12 @@ def resolve_release(provider_id: str, identity: IsoIdentity) -> ReleaseArtifact:
         "hirens-bootcd-pe": _hirens_bootcd_pe,
         "shredos": _shredos,
         "netbsd": _netbsd,
+        "porteux": _porteux,
+        "ghostbsd": _ghostbsd,
+        "haiku": _haiku,
+        "solus": _solus,
+        "truenas": _truenas,
+        "tails": _tails,
     }
     try:
         resolver = resolvers[provider_id]
@@ -1128,4 +1140,243 @@ def _netbsd(identity: IsoIdentity) -> ReleaseArtifact:
         "sha512",
         checksum,
         {host},
+    )
+
+
+def _porteux(identity: IsoIdentity) -> ReleaseArtifact:
+    editions = {"cinnamon", "cosmic", "gnome", "kde", "lxde", "lxqt", "mate", "xfce"}
+    if identity.product_id != "porteux" or identity.edition not in editions:
+        raise ProviderError("This PorteuX desktop edition is not supported.")
+    if identity.architecture != "x86_64" or identity.channel != "current":
+        raise ProviderError("PorteuX automatic updates currently support current x86_64 images.")
+    hosts = {
+        "api.github.com",
+        "github.com",
+        "release-assets.githubusercontent.com",
+        "objects.githubusercontent.com",
+    }
+    client = SafeHttpClient(frozenset(hosts))
+    payload = json.loads(
+        _text(client, "https://api.github.com/repos/porteux/porteux/releases/latest")
+    )
+    expression = re.compile(
+        rf"^porteux-(?P<version>\d+(?:\.\d+)+)-current-"
+        rf"{re.escape(identity.edition)}-(?P<build>[A-Za-z0-9.]+)-x86_64\.iso$",
+        re.IGNORECASE,
+    )
+    for value in payload.get("assets", []):
+        if not isinstance(value, dict):
+            continue
+        match = expression.fullmatch(str(value.get("name", "")))
+        if match is None:
+            continue
+        digest = str(value.get("digest", ""))
+        size = value.get("size")
+        if not re.fullmatch(r"sha256:[A-Fa-f0-9]{64}", digest):
+            raise ProviderError("The PorteuX ISO lacks an official SHA-256 digest.")
+        if not isinstance(size, int) or size <= 0:
+            raise ProviderError("The PorteuX ISO lacks an official download size.")
+        return _artifact(
+            identity,
+            match.group("version"),
+            match.group(0),
+            str(value.get("browser_download_url", "")),
+            "sha256",
+            digest.removeprefix("sha256:").lower(),
+            hosts,
+            size_bytes=size,
+            build=match.group("build"),
+        )
+    raise ProviderError("The latest PorteuX release lacks the selected desktop ISO.")
+
+
+def _ghostbsd(identity: IsoIdentity) -> ReleaseArtifact:
+    channels = {"mate": "official", "xfce": "community", "gershwin": "preview"}
+    if identity.product_id != "ghostbsd" or identity.edition not in channels:
+        raise ProviderError("This GhostBSD desktop image is not supported.")
+    if identity.architecture != "amd64" or identity.channel != channels[identity.edition]:
+        raise ProviderError("The GhostBSD desktop edition and update channel do not match.")
+    hosts = {"www.ghostbsd.org", "download.ghostbsd.org"}
+    client = SafeHttpClient(frozenset(hosts))
+    page = _text(client, "https://www.ghostbsd.org/download")
+    suffix = {"mate": "", "xfce": "-XFCE", "gershwin": "-GERSHWIN"}[identity.edition]
+    expression = re.compile(
+        r"https://download\.ghostbsd\.org/releases/amd64/"
+        r"(?P<version>\d+(?:\.\d+)+-R\d+(?:\.\d+)+p\d+)/"
+        rf"(?P<filename>GhostBSD-(?P=version){suffix}\.iso)\b",
+        re.IGNORECASE,
+    )
+    matches = list(expression.finditer(page))
+    if not matches:
+        raise ProviderError("The official GhostBSD page lacks the selected ISO.")
+    match = max(matches, key=lambda item: _version_key(item.group("version")))
+    filename = match.group("filename")
+    url = match.group(0)
+    checksum = _checksum(_text(client, url + ".sha256"), filename, "sha256")
+    return _artifact(
+        identity,
+        match.group("version"),
+        filename,
+        url,
+        "sha256",
+        checksum,
+        hosts,
+    )
+
+
+def _haiku(identity: IsoIdentity) -> ReleaseArtifact:
+    if identity.product_id != "haiku" or identity.edition != "anyboot":
+        raise ProviderError("Only official Haiku anyboot ISOs are supported.")
+    if identity.architecture not in {"x86_64", "x86_gcc2h"} or identity.channel != "stable":
+        raise ProviderError("This Haiku architecture or release channel is not supported.")
+    hosts = {"www.haiku-os.org", "haiku-release.cdn.haiku-os.org"}
+    client = SafeHttpClient(frozenset(hosts))
+    page = _text(client, "https://www.haiku-os.org/get-haiku/")
+    expression = re.compile(
+        rf"\b(haiku-(?P<version>r\d+beta\d+)-{re.escape(identity.architecture)}-"
+        rf"anyboot\.iso)\b",
+        re.IGNORECASE,
+    )
+    matches = list(expression.finditer(page))
+    if not matches:
+        raise ProviderError("The official Haiku page lacks the selected anyboot ISO.")
+    match = max(matches, key=lambda item: _version_key(item.group("version")))
+    filename, version = match.group(1), match.group("version").lower()
+    checksum = _checksum(page, filename, "sha256")
+    url = f"https://haiku-release.cdn.haiku-os.org/{version}/{filename}"
+    return _artifact(identity, version, filename, url, "sha256", checksum, hosts)
+
+
+def _solus(identity: IsoIdentity) -> ReleaseArtifact:
+    editions = {"budgie": "Budgie", "gnome": "GNOME", "plasma": "Plasma", "xfce": "Xfce"}
+    if identity.product_id != "solus" or identity.edition not in editions:
+        raise ProviderError("This Solus desktop edition is not supported.")
+    if identity.architecture != "x86_64" or identity.channel != "stable":
+        raise ProviderError("Solus automatic updates support stable x86_64 images only.")
+    hosts = {"getsol.us", "downloads.getsol.us"}
+    client = SafeHttpClient(frozenset(hosts))
+    page = _text(client, "https://getsol.us/download/")
+    name = editions[identity.edition]
+    expression = re.compile(
+        rf"https://downloads\.getsol\.us/isos/(?P<version>\d{{4}}-\d{{2}}-\d{{2}})/"
+        rf"(?P<filename>Solus-{name}-Release-(?P=version)\.iso)\b",
+        re.IGNORECASE,
+    )
+    matches = list(expression.finditer(page))
+    if not matches:
+        raise ProviderError("The official Solus page lacks the selected desktop ISO.")
+    match = max(matches, key=lambda item: item.group("version"))
+    filename, url = match.group("filename"), match.group(0)
+    checksum = _checksum(_text(client, url + ".sha256sum"), filename, "sha256")
+    return _artifact(
+        identity,
+        match.group("version"),
+        filename,
+        url,
+        "sha256",
+        checksum,
+        hosts,
+    )
+
+
+def _truenas(identity: IsoIdentity) -> ReleaseArtifact:
+    if identity.product_id != "truenas" or identity.edition != "community":
+        raise ProviderError("Only TrueNAS Community Edition installers are supported.")
+    if identity.architecture != "x86_64" or identity.channel not in {"stable", "beta"}:
+        raise ProviderError("This TrueNAS architecture or channel is not supported.")
+    hosts = {
+        "www.truenas.com",
+        "download.sys.truenas.net",
+        "iso.sys.truenas.net",
+    }
+    client = SafeHttpClient(frozenset(hosts))
+    page = _text(client, "https://www.truenas.com/download-truenas-community-edition/")
+    if identity.channel == "stable":
+        expression = re.compile(
+            r"https://download\.sys\.truenas\.net/[^\s\"'<>]+/"
+            r"(?P<version>\d+(?:\.\d+)+)/"
+            r"(?P<filename>TrueNAS-SCALE-(?P=version)\.iso)\b",
+            re.IGNORECASE,
+        )
+    else:
+        expression = re.compile(
+            r"https://iso\.sys\.truenas\.net/[^\s\"'<>]+/"
+            r"(?P<version>\d+(?:\.\d+)+-BETA\.\d+)/"
+            r"(?P<filename>TrueNAS-(?P=version)\.iso)\b",
+            re.IGNORECASE,
+        )
+    matches = list(expression.finditer(page))
+    if not matches:
+        raise ProviderError("The official TrueNAS page lacks the selected installer channel.")
+    match = max(matches, key=lambda item: _version_key(item.group("version")))
+    filename, url = match.group("filename"), match.group(0)
+    checksum = _checksum(_text(client, url + ".sha256"), filename, "sha256")
+    return _artifact(
+        identity,
+        match.group("version"),
+        filename,
+        url,
+        "sha256",
+        checksum,
+        hosts,
+    )
+
+
+def _tails(identity: IsoIdentity) -> ReleaseArtifact:
+    if (
+        identity.product_id != "tails"
+        or identity.edition != "iso"
+        or identity.architecture != "amd64"
+        or identity.channel != "stable"
+    ):
+        raise ProviderError("Only the official stable Tails amd64 ISO is supported.")
+    hosts = {
+        "tails.net",
+        "download.tails.net",
+        "mirror.bouwhuis.network",
+        "ftp.fau.de",
+        "tails.hivane.net",
+        "tails.ybti.net",
+        "mirror.netcologne.de",
+    }
+    client = SafeHttpClient(frozenset(hosts))
+    metadata_url = "https://tails.net/install/v2/Tails/amd64/stable/latest.json"
+    payload = json.loads(_text(client, metadata_url))
+    installations = payload.get("installations", [])
+    if not isinstance(installations, list):
+        raise ProviderError("The official Tails metadata has no installation list.")
+    candidates: list[tuple[str, dict[str, object]]] = []
+    for installation in installations:
+        if not isinstance(installation, dict):
+            continue
+        version = installation.get("version")
+        paths = installation.get("installation-paths", [])
+        if not isinstance(version, str) or not isinstance(paths, list):
+            continue
+        for path in paths:
+            if not isinstance(path, dict) or path.get("type") != "iso":
+                continue
+            files = path.get("target-files", [])
+            if isinstance(files, list):
+                candidates.extend((version, item) for item in files if isinstance(item, dict))
+    if not candidates:
+        raise ProviderError("The official Tails metadata contains no stable ISO.")
+    version, selected = max(candidates, key=lambda item: _version_key(item[0]))
+    filename = f"tails-amd64-{version}.iso"
+    url = str(selected.get("url", ""))
+    digest = str(selected.get("sha256", ""))
+    size = selected.get("size")
+    if not url.endswith("/" + filename) or not re.fullmatch(r"[A-Fa-f0-9]{64}", digest):
+        raise ProviderError("The Tails ISO metadata is not bound to the expected artifact.")
+    if not isinstance(size, int) or size <= 0:
+        raise ProviderError("The Tails ISO metadata lacks a valid download size.")
+    return _artifact(
+        identity,
+        version,
+        filename,
+        url,
+        "sha256",
+        digest.lower(),
+        hosts,
+        size_bytes=size,
     )

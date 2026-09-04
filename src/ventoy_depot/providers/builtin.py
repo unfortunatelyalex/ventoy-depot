@@ -960,4 +960,118 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
         ),
         ProviderCapabilities(("installer",), ("amd64", "i386"), (), ("release",)),
     ),
+    FilenameProvider(
+        "porteux",
+        "PorteuX",
+        (
+            FilenameRule(
+                re.compile(
+                    r"porteux-(?P<version>\d+(?:\.\d+)+)-(?P<channel>current|stable)-"
+                    r"(?P<edition>cinnamon|cosmic|gnome|kde|lxde|lxqt|mate|xfce)-"
+                    r"(?P<build>[A-Za-z0-9.]+)-(?P<architecture>x86_64)\.iso$",
+                    re.I,
+                ),
+                "porteux",
+            ),
+        ),
+        ProviderCapabilities(
+            ("cinnamon", "cosmic", "gnome", "kde", "lxde", "lxqt", "mate", "xfce"),
+            ("x86_64",),
+            (),
+            ("current", "stable"),
+        ),
+    ),
+    FilenameProvider(
+        "ghostbsd",
+        "GhostBSD",
+        (
+            FilenameRule(
+                re.compile(
+                    r"GhostBSD-(?P<version>\d+(?:\.\d+)+-R\d+(?:\.\d+)+p\d+)\.iso$",
+                    re.I,
+                ),
+                "ghostbsd",
+                default_edition="mate",
+                default_channel="official",
+                default_architecture="amd64",
+            ),
+            FilenameRule(
+                re.compile(
+                    r"GhostBSD-(?P<version>\d+(?:\.\d+)+-R\d+(?:\.\d+)+p\d+)-"
+                    r"(?P<edition>XFCE)\.iso$",
+                    re.I,
+                ),
+                "ghostbsd",
+                default_channel="community",
+                default_architecture="amd64",
+            ),
+            FilenameRule(
+                re.compile(
+                    r"GhostBSD-(?P<version>\d+(?:\.\d+)+-R\d+(?:\.\d+)+p\d+)-"
+                    r"(?P<edition>GERSHWIN)\.iso$",
+                    re.I,
+                ),
+                "ghostbsd",
+                default_channel="preview",
+                default_architecture="amd64",
+            ),
+        ),
+        ProviderCapabilities(
+            ("mate", "xfce", "gershwin"),
+            ("amd64",),
+            (),
+            ("official", "community", "preview"),
+        ),
+    ),
+    FilenameProvider(
+        "haiku",
+        "Haiku",
+        (
+            FilenameRule(
+                re.compile(
+                    r"haiku-(?P<version>r\d+beta\d+)-"
+                    r"(?P<architecture>x86_64|x86_gcc2h)-(?P<edition>anyboot)\.iso$",
+                    re.I,
+                ),
+                "haiku",
+            ),
+        ),
+        ProviderCapabilities(("anyboot",), ("x86_64", "x86_gcc2h"), (), ("stable",)),
+    ),
+    FilenameProvider(
+        "solus",
+        "Solus",
+        (
+            FilenameRule(
+                re.compile(
+                    r"Solus-(?P<edition>Budgie|GNOME|Plasma|Xfce)-Release-"
+                    r"(?P<version>\d{4}-\d{2}-\d{2})\.iso$",
+                    re.I,
+                ),
+                "solus",
+                default_architecture="x86_64",
+            ),
+        ),
+        ProviderCapabilities(("budgie", "gnome", "plasma", "xfce"), ("x86_64",), (), ("stable",)),
+    ),
+    FilenameProvider(
+        "truenas",
+        "TrueNAS Community Edition",
+        (
+            FilenameRule(
+                re.compile(r"TrueNAS-SCALE-(?P<version>\d+(?:\.\d+)+)\.iso$", re.I),
+                "truenas",
+                default_edition="community",
+                default_architecture="x86_64",
+            ),
+            FilenameRule(
+                re.compile(r"TrueNAS-(?P<version>\d+(?:\.\d+)+-BETA\.\d+)\.iso$", re.I),
+                "truenas",
+                default_edition="community",
+                default_channel="beta",
+                default_architecture="x86_64",
+            ),
+        ),
+        ProviderCapabilities(("community",), ("x86_64",), (), ("stable", "beta")),
+    ),
 )

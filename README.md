@@ -44,10 +44,10 @@ it only to suggest a product; the user still confirms every identity field.
 
 Automatic official resolution currently covers Arch Linux, Ubuntu, Debian, Fedora
 Workstation/Server/KDE, Alpine Linux, Rocky Linux, AlmaLinux, Linux Mint stable editions,
-EndeavourOS, CachyOS, Clonezilla, Gentoo, GParted Live, Hiren's BootCD PE, Kali Linux,
-netboot.xyz, NixOS, SystemRescue, openSUSE Tumbleweed, FreeBSD, Omarchy, Pop!_OS,
-Proxmox, Rescuezilla, Vanilla OS and the free Zorin OS editions. Grml, Qubes OS, Tails
-and Memtest86+ are recognized but remain
+EndeavourOS, CachyOS, Clonezilla, Gentoo, GhostBSD, GParted Live, Haiku, Hiren's BootCD PE, Kali Linux,
+netboot.xyz, NixOS, SystemRescue, openSUSE Tumbleweed, FreeBSD, Omarchy, Pop!_OS, PorteuX,
+Proxmox, Rescuezilla, Solus, TrueNAS Community Edition, Vanilla OS and the free Zorin OS
+editions and Tails. Grml, Qubes OS and Memtest86+ are recognized but remain
 download-disabled until their mirror, signature-chain or archive-extraction requirements
 can be represented safely. A variant without an exact official mapping remains visibly
 skipped; it is never silently converted.
