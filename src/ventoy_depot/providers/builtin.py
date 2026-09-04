@@ -1110,4 +1110,27 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
             ("stable",),
         ),
     ),
+    FilenameProvider(
+        "void-linux",
+        "Void Linux",
+        (
+            FilenameRule(
+                re.compile(
+                    r"void-live-(?P<architecture>x86_64|i686|aarch64|asahi)"
+                    r"(?:-(?P<flavor>musl))?-(?P<version>\d{8})-"
+                    r"(?P<edition>base|xfce)\.iso$",
+                    re.I,
+                ),
+                "void-linux",
+                default_flavor="glibc",
+            ),
+        ),
+        ProviderCapabilities(
+            ("base", "xfce"),
+            ("x86_64", "i686", "aarch64", "asahi"),
+            (),
+            ("stable",),
+            ("glibc", "musl"),
+        ),
+    ),
 )

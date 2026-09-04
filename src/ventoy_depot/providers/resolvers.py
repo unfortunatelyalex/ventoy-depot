@@ -50,6 +50,7 @@ BUILTIN_RESOLVER_IDS = frozenset(
         "grml",
         "kde-neon",
         "parrot-os",
+        "void-linux",
     }
 )
 
@@ -94,6 +95,7 @@ def resolve_release(provider_id: str, identity: IsoIdentity) -> ReleaseArtifact:
         "grml": _grml,
         "kde-neon": _kde_neon,
         "parrot-os": _parrot_os,
+        "void-linux": _void_linux,
     }
     try:
         resolver = resolvers[provider_id]
@@ -1477,5 +1479,45 @@ def _parrot_os(identity: IsoIdentity) -> ReleaseArtifact:
         base + filename,
         "sha512",
         checksum,
+        hosts,
+    )
+
+
+def _void_linux(identity: IsoIdentity) -> ReleaseArtifact:
+    if identity.product_id != "void-linux" or identity.edition not in {"base", "xfce"}:
+        raise ProviderError("This Void Linux image type is not supported.")
+    if identity.flavor not in {"glibc", "musl"} or identity.architecture not in {
+        "x86_64",
+        "i686",
+        "aarch64",
+        "asahi",
+    }:
+        raise ProviderError("This Void Linux libc or architecture is not supported.")
+    if identity.channel != "stable" or (
+        identity.architecture == "i686" and identity.flavor == "musl"
+    ):
+        raise ProviderError("This Void Linux image combination is not published.")
+    hosts = {"repo-default.voidlinux.org"}
+    client = SafeHttpClient(frozenset(hosts))
+    base = "https://repo-default.voidlinux.org/live/current/"
+    sums = _text(client, base + "sha256sum.txt")
+    libc = "-musl" if identity.flavor == "musl" else ""
+    expression = re.compile(
+        rf"\b(void-live-{re.escape(identity.architecture)}{libc}-"
+        rf"(?P<version>\d{{8}})-{re.escape(identity.edition)}\.iso)\b",
+        re.IGNORECASE,
+    )
+    matches = list(expression.finditer(sums))
+    if not matches:
+        raise ProviderError("The Void Linux checksum list lacks the selected ISO variant.")
+    match = max(matches, key=lambda item: item.group("version"))
+    filename, version = match.group(1), match.group("version")
+    return _artifact(
+        identity,
+        version,
+        filename,
+        base + filename,
+        "sha256",
+        _checksum(sums, filename, "sha256"),
         hosts,
     )

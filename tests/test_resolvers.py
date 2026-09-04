@@ -675,6 +675,56 @@ def test_parrot_resolver_rejects_unsupported_architecture() -> None:
         resolvers.resolve_release("parrot-os", identity)
 
 
+@pytest.mark.parametrize(
+    ("architecture", "flavor", "edition", "filename"),
+    [
+        ("x86_64", "glibc", "base", "void-live-x86_64-20250202-base.iso"),
+        ("aarch64", "musl", "xfce", "void-live-aarch64-musl-20250202-xfce.iso"),
+        ("asahi", "glibc", "xfce", "void-live-asahi-20250202-xfce.iso"),
+    ],
+)
+def test_void_resolver_preserves_arch_libc_and_image_type(
+    monkeypatch, architecture: str, flavor: str, edition: str, filename: str
+) -> None:
+    digest = "4" * 64
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, url: str) -> bytes:
+            assert url == "https://repo-default.voidlinux.org/live/current/sha256sum.txt"
+            return f"{digest}  {filename}\n".encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "void-linux",
+        "void-linux",
+        edition,
+        flavor,
+        "stable",
+        architecture,
+        None,
+        "20240314",
+        None,
+    )
+    artifact = resolvers.resolve_release("void-linux", installed)
+
+    assert artifact.filename == filename
+    assert artifact.version == "20250202"
+    assert artifact.checksum == digest
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()
+
+
+def test_void_resolver_rejects_unpublished_i686_musl() -> None:
+    identity = IsoIdentity(
+        "void-linux", "void-linux", "base", "musl", "stable", "i686", None, None, None
+    )
+    with pytest.raises(resolvers.ProviderError, match="not published"):
+        resolvers.resolve_release("void-linux", identity)
+
+
 def test_cachyos_resolver_uses_latest_matching_official_directory(monkeypatch) -> None:
     filename = "cachyos-desktop-linux-260809.iso"
     digest = "f" * 64

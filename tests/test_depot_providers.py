@@ -89,6 +89,8 @@ from ventoy_depot.providers.base import ProviderError
         ("neon-testing-desktop-20260901-0146.iso", "kde-neon", "desktop", "x86_64"),
         ("Parrot-home-7.3_amd64.iso", "parrot-os", "home", "amd64"),
         ("Parrot-spin-htb-7.3_amd64.iso", "parrot-os", "htb", "amd64"),
+        ("void-live-x86_64-20250202-base.iso", "void-linux", "base", "x86_64"),
+        ("void-live-aarch64-musl-20250202-xfce.iso", "void-linux", "xfce", "aarch64"),
     ],
 )
 def test_variant_preserving_detection(
