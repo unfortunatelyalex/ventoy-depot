@@ -52,6 +52,7 @@ BUILTIN_RESOLVER_IDS = frozenset(
         "parrot-os",
         "void-linux",
         "mageia",
+        "centos-stream",
     }
 )
 
@@ -98,6 +99,7 @@ def resolve_release(provider_id: str, identity: IsoIdentity) -> ReleaseArtifact:
         "parrot-os": _parrot_os,
         "void-linux": _void_linux,
         "mageia": _mageia,
+        "centos-stream": _centos_stream,
     }
     try:
         resolver = resolvers[provider_id]
@@ -1554,5 +1556,39 @@ def _mageia(identity: IsoIdentity) -> ReleaseArtifact:
         base + filename,
         "sha512",
         checksum,
+        {host},
+    )
+
+
+def _centos_stream(identity: IsoIdentity) -> ReleaseArtifact:
+    if identity.product_id != "centos-stream" or identity.edition not in {"boot", "dvd1"}:
+        raise ProviderError("This CentOS Stream image type is not supported.")
+    if identity.channel not in {"9", "10"} or identity.architecture not in {
+        "x86_64",
+        "aarch64",
+    }:
+        raise ProviderError("This CentOS Stream release or architecture is not supported.")
+    host = "mirror.stream.centos.org"
+    client = SafeHttpClient(frozenset({host}))
+    base = f"https://{host}/{identity.channel}-stream/BaseOS/{identity.architecture}/iso/"
+    sums = _text(client, base + "SHA256SUM")
+    expression = re.compile(
+        rf"\b(CentOS-Stream-{re.escape(identity.channel)}-"
+        rf"(?P<version>\d{{8}}\.\d+)-{re.escape(identity.architecture)}-"
+        rf"{re.escape(identity.edition)}\.iso)\b",
+        re.IGNORECASE,
+    )
+    matches = list(expression.finditer(sums))
+    if not matches:
+        raise ProviderError("The CentOS Stream checksum list lacks the selected ISO variant.")
+    match = max(matches, key=lambda item: _version_key(item.group("version")))
+    filename, version = match.group(1), match.group("version")
+    return _artifact(
+        identity,
+        version,
+        filename,
+        base + filename,
+        "sha256",
+        _checksum(sums, filename, "sha256"),
         {host},
     )

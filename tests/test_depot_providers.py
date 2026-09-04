@@ -93,6 +93,18 @@ from ventoy_depot.providers.base import ProviderError
         ("void-live-aarch64-musl-20250202-xfce.iso", "void-linux", "xfce", "aarch64"),
         ("Mageia-10-x86_64.iso", "mageia", "classic", "x86_64"),
         ("Mageia-10-Live-Xfce-i686.iso", "mageia", "xfce", "i686"),
+        (
+            "CentOS-Stream-10-20260901.0-x86_64-boot.iso",
+            "centos-stream",
+            "boot",
+            "x86_64",
+        ),
+        (
+            "CentOS-Stream-9-latest-aarch64-dvd1.iso",
+            "centos-stream",
+            "dvd1",
+            "aarch64",
+        ),
     ],
 )
 def test_variant_preserving_detection(

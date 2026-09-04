@@ -1169,4 +1169,25 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
             ("stable",),
         ),
     ),
+    FilenameProvider(
+        "centos-stream",
+        "CentOS Stream",
+        (
+            FilenameRule(
+                re.compile(
+                    r"CentOS-Stream-(?P<channel>9|10)-"
+                    r"(?P<version>latest|\d{8}\.\d+)-"
+                    r"(?P<architecture>x86_64|aarch64)-(?P<edition>boot|dvd1)\.iso$",
+                    re.I,
+                ),
+                "centos-stream",
+            ),
+        ),
+        ProviderCapabilities(
+            ("boot", "dvd1"),
+            ("x86_64", "aarch64"),
+            (),
+            ("9", "10"),
+        ),
+    ),
 )

@@ -43,7 +43,8 @@ assignment dialog reads the ISO-9660 volume identifier without mounting the imag
 it only to suggest a product; the user still confirms every identity field.
 
 Automatic official resolution currently covers Arch Linux, Ubuntu, Debian, Fedora
-Workstation/Server/KDE, Alpine Linux, Rocky Linux, AlmaLinux, Linux Mint stable editions,
+Workstation/Server/KDE, Alpine Linux, Rocky Linux, AlmaLinux, CentOS Stream,
+Linux Mint stable editions,
 EndeavourOS, CachyOS, Clonezilla, Gentoo, GhostBSD, GParted Live, Grml, Haiku,
 Hiren's BootCD PE, Kali Linux, KDE neon,
 netboot.xyz, NixOS, SystemRescue, openSUSE Tumbleweed, FreeBSD, Omarchy, Parrot OS,

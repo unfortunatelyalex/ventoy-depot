@@ -772,6 +772,64 @@ def test_mageia_resolver_rejects_unpublished_i686_gnome() -> None:
         resolvers.resolve_release("mageia", identity)
 
 
+@pytest.mark.parametrize(
+    ("channel", "architecture", "edition"),
+    [("9", "aarch64", "dvd1"), ("10", "x86_64", "boot")],
+)
+def test_centos_stream_resolver_preserves_major_architecture_and_medium(
+    monkeypatch, channel: str, architecture: str, edition: str
+) -> None:
+    filename = f"CentOS-Stream-{channel}-20260901.0-{architecture}-{edition}.iso"
+    digest = "6" * 64
+    base = f"https://mirror.stream.centos.org/{channel}-stream/BaseOS/{architecture}/iso/"
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, url: str) -> bytes:
+            assert url == base + "SHA256SUM"
+            old = f"CentOS-Stream-{channel}-20260801.0-{architecture}-{edition}.iso"
+            return f"{'7' * 64}  {old}\n{digest}  {filename}\n".encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "centos-stream",
+        "centos-stream",
+        edition,
+        None,
+        channel,
+        architecture,
+        None,
+        "20260801.0",
+        None,
+    )
+    artifact = resolvers.resolve_release("centos-stream", installed)
+
+    assert artifact.version == "20260901.0"
+    assert artifact.filename == filename
+    assert artifact.download_url == base + filename
+    assert artifact.checksum == digest
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()
+
+
+def test_centos_stream_resolver_rejects_major_channel_change() -> None:
+    identity = IsoIdentity(
+        "centos-stream",
+        "centos-stream",
+        "boot",
+        None,
+        "11",
+        "x86_64",
+        None,
+        None,
+        None,
+    )
+    with pytest.raises(resolvers.ProviderError, match="release or architecture"):
+        resolvers.resolve_release("centos-stream", identity)
+
+
 def test_cachyos_resolver_uses_latest_matching_official_directory(monkeypatch) -> None:
     filename = "cachyos-desktop-linux-260809.iso"
     digest = "f" * 64

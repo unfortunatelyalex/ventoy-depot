@@ -148,6 +148,7 @@ _ASSIGNMENT_PROFILES = (
     ("Parrot OS", "parrot-os", "parrot-os", "amd64"),
     ("Void Linux", "void-linux", "void-linux", "x86_64"),
     ("Mageia", "mageia", "mageia", "x86_64"),
+    ("CentOS Stream", "centos-stream", "centos-stream", "x86_64"),
 )
 
 _VOLUME_PROFILE_HINTS = (
