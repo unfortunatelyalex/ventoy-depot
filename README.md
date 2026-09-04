@@ -86,6 +86,12 @@ Read-only commands include `devices`, `scan`, `plan`, `providers list`,
 `providers validate`, `providers doctor`, and `verify`. Add `--json` for stable,
 schema-versioned machine output.
 
+`providers doctor` validates all loaded provider definitions without network traffic;
+specifying one provider ID additionally resolves its current official metadata. `verify PATH`
+identifies the ISO and compares it with the publisher checksum when the file is the current
+release. A confirmed mismatch exits with status 4; unknown or historical images are hashed
+without being falsely reported as verified.
+
 ## Safety model
 
 - The app lists only removable, mounted volumes that have a Ventoy label or a Ventoy

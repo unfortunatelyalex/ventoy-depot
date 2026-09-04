@@ -8,10 +8,10 @@ from typing import Any
 
 from .app import run_tui
 from .devices import DeviceError, discover_ventoy_devices, find_device
-from .iso import find_isos, sha256_file
-from .models import to_jsonable
+from .iso import find_isos, identify_iso, verify_detected_iso
+from .models import IsoIdentity, VerificationLevel, to_jsonable
 from .planner import build_plan
-from .providers import provider_map
+from .providers import Provider, ProviderError, provider_map
 from .security import SecurityError, load_and_validate_manifest
 
 SCHEMA_VERSION = "1"
@@ -37,7 +37,10 @@ def parser() -> argparse.ArgumentParser:
     validate.add_argument("file", type=Path)
     doctor = provider_commands.add_parser("doctor")
     doctor.add_argument("provider", nargs="?")
-    verify = sub.add_parser("verify", help="calculate the SHA-256 of an existing ISO")
+    doctor.add_argument("--json", action="store_true")
+    verify = sub.add_parser(
+        "verify", help="verify a current recognized ISO against official metadata when possible"
+    )
     verify.add_argument("path", type=Path)
     verify.add_argument("--json", action="store_true")
     return result
@@ -63,14 +66,7 @@ def _dispatch(arguments: argparse.Namespace) -> int:
     if arguments.command == "plan":
         return _output(build_plan(find_device(arguments.device), arguments.refresh), arguments.json)
     if arguments.command == "verify":
-        if not arguments.path.is_file():
-            raise OSError(f"ISO file not found: {arguments.path}")
-        verification = {
-            "path": str(arguments.path),
-            "algorithm": "sha256",
-            "checksum": sha256_file(arguments.path),
-        }
-        return _output(verification, arguments.json)
+        return _verify(arguments.path, arguments.json)
     if arguments.provider_command == "list":
         listing = [
             {
@@ -95,17 +91,96 @@ def _dispatch(arguments: argparse.Namespace) -> int:
     if not selected:
         _emit({"error": "provider not found"}, True)
         return 3
-    return _output(
-        [
-            {
-                "provider_id": item.provider_id,
-                "status": item.origin,
-                "custom": item.custom,
-                "network_checked": False,
-            }
-            for item in selected
-        ],
-        False,
+    network = arguments.provider is not None
+    results = [_doctor(item, network=network) for item in selected]
+    exit_code = _output(results, arguments.json)
+    return 4 if network and any(item["status"] != "healthy" for item in results) else exit_code
+
+
+def _verify(path: Path, as_json: bool) -> int:
+    if path.is_symlink() or not path.is_file():
+        raise OSError(f"ISO file not found or unsafe: {path}")
+    detected = identify_iso(path)
+    target = None
+    resolution_error = None
+    if detected.identity is not None:
+        provider = provider_map().get(detected.identity.provider_id)
+        if provider is None:
+            resolution_error = f"Provider is not available: {detected.identity.provider_id}"
+        else:
+            try:
+                target = provider.resolve(detected.identity)
+                if target.identity is None:
+                    raise ProviderError("Provider did not declare the target ISO identity.")
+                provider.validate_binding(detected.identity, target.identity)
+            except Exception as error:
+                resolution_error = str(error)
+    result = verify_detected_iso(detected, target)
+    document = {
+        **to_jsonable(result),
+        "identity": to_jsonable(detected.identity),
+        "detection_source": detected.detection_source,
+        "official_metadata_error": resolution_error,
+    }
+    _output(document, as_json)
+    return 4 if result.verified is False else 0
+
+
+def _doctor(provider: Provider, *, network: bool) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "provider_id": provider.provider_id,
+        "origin": provider.origin,
+        "custom": provider.custom,
+        "status": "configured",
+        "network_checked": False,
+    }
+    if not network:
+        return result
+    try:
+        identity = _doctor_identity(provider)
+        artifact = provider.resolve(identity)
+        if artifact.identity is None:
+            raise ProviderError("Provider did not declare the target ISO identity.")
+        provider.validate_binding(identity, artifact.identity)
+        if artifact.verification_level == VerificationLevel.UNVERIFIED:
+            raise ProviderError("Provider returned an unverified artifact.")
+    except Exception as error:
+        result.update(status="unavailable", network_checked=True, error=str(error))
+        return result
+    result.update(
+        status="healthy",
+        network_checked=True,
+        version=artifact.version,
+        filename=artifact.filename,
+        verification_level=artifact.verification_level.value,
+    )
+    return result
+
+
+def _doctor_identity(provider: Provider) -> IsoIdentity:
+    capabilities = provider.capabilities
+    products = provider.products
+    if not products or not capabilities.architectures or not capabilities.channels:
+        raise ProviderError("Provider does not declare a probeable product identity.")
+    flavor_defaults = {
+        "fedora": "live",
+        "manjaro": "full",
+        "rescuezilla": capabilities.flavors[-1] if capabilities.flavors else None,
+        "void-linux": "glibc",
+    }
+    language_required = {"windows-11"}
+    return IsoIdentity(
+        provider.provider_id,
+        products[0],
+        capabilities.editions[0] if capabilities.editions else None,
+        flavor_defaults.get(provider.provider_id),
+        capabilities.channels[0],
+        capabilities.architectures[0],
+        capabilities.languages[0]
+        if provider.provider_id in language_required and capabilities.languages
+        else None,
+        None,
+        None,
     )
 
 
