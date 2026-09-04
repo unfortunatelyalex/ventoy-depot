@@ -569,6 +569,33 @@ def test_tails_resolver_rejects_unbound_filename(monkeypatch) -> None:
         resolvers.resolve_release("tails", identity)
 
 
+def test_grml_resolver_uses_direct_official_master_and_sidecar(monkeypatch) -> None:
+    filename = "grml-small-2026.09-arm64.iso"
+    digest = "1" * 64
+    url = f"https://ftp-master.grml.org/{filename}"
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, requested: str) -> bytes:
+            if requested == "https://grml.org/download/":
+                return b"grml-small-2026.04-arm64.iso\n" + filename.encode() + b"\n"
+            assert requested == url + ".sha256"
+            return f"{digest}  {filename}\n".encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity("grml", "grml", "small", None, "stable", "arm64", None, "2026.04", None)
+    artifact = resolvers.resolve_release("grml", installed)
+
+    assert artifact.version == "2026.09"
+    assert artifact.filename == filename
+    assert artifact.download_url == url
+    assert artifact.checksum == digest
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()
+
+
 def test_cachyos_resolver_uses_latest_matching_official_directory(monkeypatch) -> None:
     filename = "cachyos-desktop-linux-260809.iso"
     digest = "f" * 64

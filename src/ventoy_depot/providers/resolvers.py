@@ -47,6 +47,7 @@ BUILTIN_RESOLVER_IDS = frozenset(
         "solus",
         "truenas",
         "tails",
+        "grml",
     }
 )
 
@@ -88,6 +89,7 @@ def resolve_release(provider_id: str, identity: IsoIdentity) -> ReleaseArtifact:
         "solus": _solus,
         "truenas": _truenas,
         "tails": _tails,
+        "grml": _grml,
     }
     try:
         resolver = resolvers[provider_id]
@@ -1380,3 +1382,26 @@ def _tails(identity: IsoIdentity) -> ReleaseArtifact:
         hosts,
         size_bytes=size,
     )
+
+
+def _grml(identity: IsoIdentity) -> ReleaseArtifact:
+    if identity.product_id != "grml" or identity.edition not in {"full", "small"}:
+        raise ProviderError("This Grml image edition is not supported.")
+    if identity.architecture not in {"amd64", "arm64"} or identity.channel != "stable":
+        raise ProviderError("This Grml architecture or channel is not supported.")
+    hosts = {"grml.org", "ftp-master.grml.org"}
+    client = SafeHttpClient(frozenset(hosts))
+    page = _text(client, "https://grml.org/download/")
+    expression = re.compile(
+        rf"\b(grml-{re.escape(identity.edition)}-(?P<version>\d{{4}}\.\d{{2}})-"
+        rf"{re.escape(identity.architecture)}\.iso)\b",
+        re.IGNORECASE,
+    )
+    matches = list(expression.finditer(page))
+    if not matches:
+        raise ProviderError("The official Grml page lacks the selected stable ISO.")
+    match = max(matches, key=lambda item: _version_key(item.group("version")))
+    filename, version = match.group(1), match.group("version")
+    url = f"https://ftp-master.grml.org/{filename}"
+    checksum = _checksum(_text(client, url + ".sha256"), filename, "sha256")
+    return _artifact(identity, version, filename, url, "sha256", checksum, hosts)
