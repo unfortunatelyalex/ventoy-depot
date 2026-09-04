@@ -636,6 +636,45 @@ def test_kde_neon_resolver_preserves_channel(monkeypatch) -> None:
     assert artifact.identity.variant_key() == installed.variant_key()
 
 
+@pytest.mark.parametrize("edition", ["home", "security", "enlightenment", "htb", "lxqt", "mate"])
+def test_parrot_resolver_preserves_edition_and_uses_sha512(monkeypatch, edition: str) -> None:
+    prefix = "Parrot" if edition in {"home", "security"} else "Parrot-spin"
+    filename = f"{prefix}-{edition}-7.3_amd64.iso"
+    digest = "3" * 128
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, url: str) -> bytes:
+            if url == "https://deb.parrot.sh/parrot/iso/":
+                return b'<a href="7.2/">7.2</a><a href="7.3/">7.3</a>'
+            assert url == "https://deb.parrot.sh/parrot/iso/7.3/signed-hashes.txt"
+            return f"sha512\n{digest}  {filename}\n".encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "parrot-os", "parrot-os", edition, None, "stable", "amd64", None, "7.2", None
+    )
+    artifact = resolvers.resolve_release("parrot-os", installed)
+
+    assert artifact.version == "7.3"
+    assert artifact.filename == filename
+    assert artifact.download_url == f"https://deb.parrot.sh/parrot/iso/7.3/{filename}"
+    assert artifact.checksum_algorithm == "sha512"
+    assert artifact.checksum == digest
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()
+
+
+def test_parrot_resolver_rejects_unsupported_architecture() -> None:
+    identity = IsoIdentity(
+        "parrot-os", "parrot-os", "home", None, "stable", "arm64", None, "7.2", None
+    )
+    with pytest.raises(resolvers.ProviderError, match="stable amd64"):
+        resolvers.resolve_release("parrot-os", identity)
+
+
 def test_cachyos_resolver_uses_latest_matching_official_directory(monkeypatch) -> None:
     filename = "cachyos-desktop-linux-260809.iso"
     digest = "f" * 64

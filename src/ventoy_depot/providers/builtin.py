@@ -1090,4 +1090,24 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
         ),
         ProviderCapabilities(("desktop",), ("x86_64",), (), ("user", "testing", "unstable")),
     ),
+    FilenameProvider(
+        "parrot-os",
+        "Parrot OS",
+        (
+            FilenameRule(
+                re.compile(
+                    r"Parrot-(?:spin-)?(?P<edition>home|security|enlightenment|htb|lxqt|mate)-"
+                    r"(?P<version>\d+\.\d+)_(?P<architecture>amd64)\.iso$",
+                    re.I,
+                ),
+                "parrot-os",
+            ),
+        ),
+        ProviderCapabilities(
+            ("home", "security", "enlightenment", "htb", "lxqt", "mate"),
+            ("amd64",),
+            (),
+            ("stable",),
+        ),
+    ),
 )

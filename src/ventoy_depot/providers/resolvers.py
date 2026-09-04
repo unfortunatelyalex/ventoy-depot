@@ -49,6 +49,7 @@ BUILTIN_RESOLVER_IDS = frozenset(
         "tails",
         "grml",
         "kde-neon",
+        "parrot-os",
     }
 )
 
@@ -92,6 +93,7 @@ def resolve_release(provider_id: str, identity: IsoIdentity) -> ReleaseArtifact:
         "tails": _tails,
         "grml": _grml,
         "kde-neon": _kde_neon,
+        "parrot-os": _parrot_os,
     }
     try:
         resolver = resolvers[provider_id]
@@ -1444,6 +1446,36 @@ def _kde_neon(identity: IsoIdentity) -> ReleaseArtifact:
         filename,
         mirror_base + filename,
         "sha256",
+        checksum,
+        hosts,
+    )
+
+
+def _parrot_os(identity: IsoIdentity) -> ReleaseArtifact:
+    editions = {"home", "security", "enlightenment", "htb", "lxqt", "mate"}
+    if identity.product_id != "parrot-os" or identity.edition not in editions:
+        raise ProviderError("This Parrot OS edition is not supported.")
+    if identity.architecture != "amd64" or identity.channel != "stable":
+        raise ProviderError("Parrot OS automatic updates support stable amd64 ISOs only.")
+    hosts = {"deb.parrot.sh"}
+    client = SafeHttpClient(frozenset(hosts))
+    root = "https://deb.parrot.sh/parrot/iso/"
+    listing = _text(client, root)
+    versions = re.findall(r'href=["\'](?P<version>\d+\.\d+)/["\']', listing, re.IGNORECASE)
+    if not versions:
+        raise ProviderError("The official Parrot OS directory contains no releases.")
+    version = max(versions, key=_version_key)
+    prefix = "Parrot" if identity.edition in {"home", "security"} else "Parrot-spin"
+    filename = f"{prefix}-{identity.edition}-{version}_amd64.iso"
+    base = f"{root}{version}/"
+    hashes = _text(client, base + "signed-hashes.txt")
+    checksum = _checksum(hashes, filename, "sha512")
+    return _artifact(
+        identity,
+        version,
+        filename,
+        base + filename,
+        "sha512",
         checksum,
         hosts,
     )

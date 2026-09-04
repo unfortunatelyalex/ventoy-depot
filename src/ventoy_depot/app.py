@@ -139,6 +139,13 @@ _ASSIGNMENT_PROFILES = (
     ("Hiren's BootCD PE", "hirens-bootcd-pe", "hirens-bootcd-pe", "x86_64"),
     ("ShredOS", "shredos", "shredos", "x86_64"),
     ("NetBSD", "netbsd", "netbsd", "amd64"),
+    ("PorteuX", "porteux", "porteux", "x86_64"),
+    ("GhostBSD", "ghostbsd", "ghostbsd", "amd64"),
+    ("Haiku", "haiku", "haiku", "x86_64"),
+    ("Solus", "solus", "solus", "x86_64"),
+    ("TrueNAS Community Edition", "truenas", "truenas", "x86_64"),
+    ("KDE neon", "kde-neon", "kde-neon", "x86_64"),
+    ("Parrot OS", "parrot-os", "parrot-os", "amd64"),
 )
 
 _VOLUME_PROFILE_HINTS = (

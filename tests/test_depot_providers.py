@@ -87,6 +87,8 @@ from ventoy_depot.providers.base import ProviderError
         ("TrueNAS-26.0.0-BETA.3.iso", "truenas", "community", "x86_64"),
         ("neon-user-desktop-20260903-0454.iso", "kde-neon", "desktop", "x86_64"),
         ("neon-testing-desktop-20260901-0146.iso", "kde-neon", "desktop", "x86_64"),
+        ("Parrot-home-7.3_amd64.iso", "parrot-os", "home", "amd64"),
+        ("Parrot-spin-htb-7.3_amd64.iso", "parrot-os", "htb", "amd64"),
     ],
 )
 def test_variant_preserving_detection(
