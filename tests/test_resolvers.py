@@ -1179,3 +1179,32 @@ def test_almalinux_resolver_preserves_architecture_and_major_channel(monkeypatch
     assert artifact.checksum == digest
     assert artifact.identity is not None
     assert artifact.identity.variant_key() == installed.variant_key()
+
+
+def test_ubuntu_flavor_resolver_preserves_product_and_lts_channel(monkeypatch) -> None:
+    filename = "kubuntu-26.04.1-desktop-amd64.iso"
+    root = "https://cdimage.ubuntu.com/kubuntu/releases/"
+    base = root + "26.04.1/release/"
+    digest = "b" * 64
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, requested: str) -> bytes:
+            if requested == root:
+                return b'<a href="25.10/">25.10</a><a href="26.04.1/">26.04.1</a>'
+            assert requested == base + "SHA256SUMS"
+            return f"{digest}  {filename}\n".encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "ubuntu-flavors", "kubuntu", "desktop", None, "lts", "amd64", None, "24.04", None
+    )
+
+    artifact = resolvers.resolve_release("ubuntu-flavors", installed)
+
+    assert artifact.filename == filename
+    assert artifact.checksum == digest
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()

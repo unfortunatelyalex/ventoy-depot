@@ -43,7 +43,8 @@ ISO's SHA-256 hash, so replacing or modifying the file invalidates stale mapping
 assignment dialog reads the ISO-9660 volume identifier without mounting the image and uses
 it only to suggest a product; the user still confirms every identity field.
 
-Automatic official resolution currently covers Arch Linux, Ubuntu, Debian, Fedora
+Automatic official resolution currently covers Arch Linux, Ubuntu, Kubuntu, Lubuntu,
+Xubuntu, Ubuntu Budgie, Ubuntu Unity, Debian, Fedora
 Workstation/Server/KDE, Alpine Linux, Rocky Linux, AlmaLinux, CentOS Stream,
 Linux Mint stable editions,
 EndeavourOS, CachyOS, Clonezilla, Gentoo, GhostBSD, GParted Live, Grml, Haiku,

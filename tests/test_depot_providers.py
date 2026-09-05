@@ -12,6 +12,11 @@ from ventoy_depot.providers.base import ProviderError
     ("filename", "provider", "edition", "architecture"),
     [
         ("ubuntu-24.04.3-live-server-amd64.iso", "ubuntu", "live-server", "amd64"),
+        ("kubuntu-26.04.1-desktop-amd64.iso", "ubuntu-flavors", "desktop", "amd64"),
+        ("lubuntu-25.10-desktop-amd64.iso", "ubuntu-flavors", "desktop", "amd64"),
+        ("xubuntu-24.04.4-desktop-amd64.iso", "ubuntu-flavors", "desktop", "amd64"),
+        ("ubuntu-budgie-26.04-desktop-amd64.iso", "ubuntu-flavors", "desktop", "amd64"),
+        ("ubuntu-unity-26.04-desktop-amd64.iso", "ubuntu-flavors", "desktop", "amd64"),
         ("debian-13.1.0-amd64-DVD-1.iso", "debian", "dvd-1", "amd64"),
         ("Fedora-KDE-Live-x86_64-42-1.1.iso", "fedora", "kde", "x86_64"),
         ("Fedora-Xfce-Live-44-1.7.x86_64.iso", "fedora", "xfce", "x86_64"),

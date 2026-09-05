@@ -42,6 +42,8 @@ def test_assignment_profiles_use_supported_product_and_architecture_defaults() -
     assert profiles["Void Linux"] == ["void-linux", "void-linux", "x86_64"]
     assert profiles["Mageia"] == ["mageia", "mageia", "x86_64"]
     assert profiles["CentOS Stream"] == ["centos-stream", "centos-stream", "x86_64"]
+    assert profiles["Kubuntu"] == ["ubuntu-flavors", "kubuntu", "amd64"]
+    assert profiles["Ubuntu Unity"] == ["ubuntu-flavors", "ubuntu-unity", "amd64"]
     assert profiles["Windows 10"] == ["windows-10", "windows-10", "x86_64"]
     assert profiles["Windows Server Evaluation"] == [
         "windows-server",

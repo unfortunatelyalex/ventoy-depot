@@ -17,6 +17,7 @@ BUILTIN_RESOLVER_IDS = frozenset(
         "rocky-linux",
         "almalinux",
         "ubuntu",
+        "ubuntu-flavors",
         "debian",
         "fedora",
         "linux-mint",
@@ -64,6 +65,7 @@ def resolve_release(provider_id: str, identity: IsoIdentity) -> ReleaseArtifact:
         "rocky-linux": _rocky_linux,
         "almalinux": _almalinux,
         "ubuntu": _ubuntu,
+        "ubuntu-flavors": _ubuntu_flavors,
         "debian": _debian,
         "fedora": _fedora,
         "linux-mint": _linux_mint,
@@ -319,6 +321,37 @@ def _ubuntu(identity: IsoIdentity) -> ReleaseArtifact:
     base = f"https://{host}/{version}/"
     sums = _text(client, base + "SHA256SUMS")
     filename = f"ubuntu-{version}-{identity.edition}-{identity.architecture}.iso"
+    checksum = _checksum(sums, filename, "sha256")
+    return _artifact(identity, version, filename, base + filename, "sha256", checksum, {host})
+
+
+def _ubuntu_flavors(identity: IsoIdentity) -> ReleaseArtifact:
+    products = {"kubuntu", "lubuntu", "xubuntu", "ubuntu-budgie", "ubuntu-unity"}
+    if (
+        identity.product_id not in products
+        or identity.edition != "desktop"
+        or identity.architecture != "amd64"
+    ):
+        raise ProviderError("This Ubuntu flavor variant has no configured official feed.")
+    host = "cdimage.ubuntu.com"
+    client = SafeHttpClient(frozenset({host}))
+    root = f"https://{host}/{identity.product_id}/releases/"
+    index = _text(client, root)
+    versions = set(re.findall(r'href=["\'](\d{2}\.\d{2}(?:\.\d+)?)/', index))
+    if identity.channel == "lts":
+        versions = {value for value in versions if int(value[:2]) % 2 == 0 and value[3:5] == "04"}
+    elif identity.channel == "interim":
+        versions = {
+            value for value in versions if not (int(value[:2]) % 2 == 0 and value[3:5] == "04")
+        }
+    else:
+        raise ProviderError(f"Unsupported Ubuntu flavor channel: {identity.channel}")
+    if not versions:
+        raise ProviderError("No supported Ubuntu flavor release was found.")
+    version = max(versions, key=_version_key)
+    base = f"{root}{version}/release/"
+    sums = _text(client, base + "SHA256SUMS")
+    filename = f"{identity.product_id}-{version}-desktop-amd64.iso"
     checksum = _checksum(sums, filename, "sha256")
     return _artifact(identity, version, filename, base + filename, "sha256", checksum, {host})
 

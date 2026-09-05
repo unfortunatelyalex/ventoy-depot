@@ -111,6 +111,37 @@ def _architecture(value: str) -> str:
     }.get(value.lower(), value.lower())
 
 
+def _ubuntu_flavor_rules() -> tuple[FilenameRule, ...]:
+    rules: list[FilenameRule] = []
+    for product in ("kubuntu", "lubuntu", "xubuntu", "ubuntu-budgie", "ubuntu-unity"):
+        name = re.escape(product)
+        rules.extend(
+            (
+                FilenameRule(
+                    re.compile(
+                        rf"{name}-(?P<version>(?:2[02468]|[02468]\d)\.04(?:\.\d+)?)-"
+                        r"desktop-(?P<architecture>amd64)\.iso$",
+                        re.I,
+                    ),
+                    product,
+                    "lts",
+                    default_edition="desktop",
+                ),
+                FilenameRule(
+                    re.compile(
+                        rf"{name}-(?P<version>\d{{2}}\.(?!04(?:\.|-))\d{{2}}(?:\.\d+)?)-"
+                        r"desktop-(?P<architecture>amd64)\.iso$",
+                        re.I,
+                    ),
+                    product,
+                    "interim",
+                    default_edition="desktop",
+                ),
+            )
+        )
+    return tuple(rules)
+
+
 BUILTIN_PROVIDERS: tuple[Provider, ...] = (
     FilenameProvider(
         "arch",
@@ -233,6 +264,12 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
         ProviderCapabilities(
             ("desktop", "live-server"), ("amd64", "arm64"), (), ("lts", "interim")
         ),
+    ),
+    FilenameProvider(
+        "ubuntu-flavors",
+        "Official Ubuntu flavors",
+        _ubuntu_flavor_rules(),
+        ProviderCapabilities(("desktop",), ("amd64",), (), ("lts", "interim")),
     ),
     FilenameProvider(
         "debian",
