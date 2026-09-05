@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from functools import partial
 from pathlib import Path
@@ -25,14 +26,16 @@ from textual.widgets import (
 
 from .assignments import AssignmentCatalog
 from .config import Settings, cache_path, load_settings, save_settings
-from .devices import DeviceError, discover_ventoy_devices, revalidate_device
+from .devices import DeviceError, discover_ventoy_devices, manual_device, revalidate_device
 from .i18n import translate
-from .models import Device, IsoIdentity, PlanItem, UpdatePlan
+from .iso import verify_detected_iso
+from .models import Device, IsoIdentity, LocalVerification, PlanItem, UpdatePlan
 from .network import configure_proxy
-from .planner import build_plan
+from .planner import build_add_plan, build_plan, toggle_replace_action
+from .providers import Provider, provider_map
 from .report import ItemResult, ResultStatus, RunReport
 from .security import safe_subdirectory
-from .transfer import TransferCancelled, apply_item
+from .transfer import TransferCancelled, apply_item, empty_trash, trash_entries
 
 
 class ConfirmUpdatePlan(ModalScreen[bool]):
@@ -58,6 +61,12 @@ class ConfirmUpdatePlan(ModalScreen[bool]):
         size = f"{known_size / 2**30:.1f} GiB"
         if unknown:
             size += f" + {unknown} unknown size(s)"
+        policy = translate(
+            "replace_warning"
+            if any(item.action.value == "replace" for item in self.items)
+            else "keep_old",
+            self.language,
+        )
         lines = []
         for item in self.items:
             assert item.target is not None
@@ -68,14 +77,15 @@ class ConfirmUpdatePlan(ModalScreen[bool]):
                 else ""
             )
             lines.append(
-                f"• {item.local.path.name}\n  → {item.target.filename}"
+                f"• {item.action.value.upper()}: {item.local.path.name}"
+                f"\n  → {item.target.filename}"
                 f" ({variant or 'default'}, {item.verification_level.value})"
             )
         with Container(id="dialog"):
             yield Static(
                 f"[bold]{translate('confirm_title', self.language)}[/bold]\n"
                 f"{len(self.items)} ISO(s), {size}\n"
-                f"{translate('keep_old', self.language)}"
+                f"{policy}"
             )
             with VerticalScroll(id="plan-lines"):
                 yield Static("\n".join(lines))
@@ -89,12 +99,108 @@ class ConfirmUpdatePlan(ModalScreen[bool]):
         self.dismiss(event.button.id == "confirm")
 
 
+class ConfirmEmptyTrash(ModalScreen[bool]):
+    CSS = """
+    ConfirmEmptyTrash { align: center middle; }
+    #trash-dialog {
+        width: 80%; max-width: 80; height: auto;
+        border: thick $error; background: $surface; padding: 1 2;
+    }
+    #trash-dialog Button { margin-right: 1; }
+    """
+
+    def __init__(self, entries: tuple[Path, ...], language: str) -> None:
+        super().__init__()
+        self.entries = entries
+        self.language = language
+
+    def compose(self) -> ComposeResult:
+        total = sum(entry.stat(follow_symlinks=False).st_size for entry in self.entries)
+        with Container(id="trash-dialog"):
+            yield Static(
+                f"[bold]{translate('empty_trash_title', self.language)}[/bold]\n"
+                + translate("empty_trash_warning", self.language).format(
+                    count=len(self.entries), size=f"{total / 2**30:.1f} GiB"
+                )
+            )
+            with Horizontal():
+                yield Button(
+                    translate("empty_trash_confirm", self.language),
+                    id="trash-confirm",
+                    variant="error",
+                )
+                yield Button(translate("cancel", self.language), id="trash-cancel")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        self.dismiss(event.button.id == "trash-confirm")
+
+
+class ManualMountDialog(ModalScreen[Path | None]):
+    CSS = """
+    ManualMountDialog { align: center middle; }
+    #manual-dialog {
+        width: 85%; max-width: 90; height: auto;
+        border: thick $warning; background: $surface; padding: 1 2;
+    }
+    #manual-path { margin: 1 0; }
+    #manual-dialog Button { margin-right: 1; }
+    """
+
+    def __init__(self, language: str) -> None:
+        super().__init__()
+        self.language = language
+
+    def compose(self) -> ComposeResult:
+        with Container(id="manual-dialog"):
+            yield Static(
+                f"[bold]{translate('manual_mount_title', self.language)}[/bold]\n"
+                f"{translate('manual_mount_warning', self.language)}"
+            )
+            yield Input(placeholder="/run/media/user/Ventoy", id="manual-path")
+            yield Static("", id="manual-error")
+            with Horizontal():
+                yield Button(
+                    translate("manual_mount_confirm", self.language),
+                    id="manual-confirm",
+                    variant="warning",
+                )
+                yield Button(translate("cancel", self.language), id="manual-cancel")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id != "manual-confirm":
+            self.dismiss(None)
+            return
+        raw = self.query_one("#manual-path", Input).value.strip()
+        if not raw:
+            self.query_one("#manual-error", Static).update(
+                translate("manual_mount_required", self.language)
+            )
+            return
+        path = Path(raw).expanduser()
+        if not path.is_absolute():
+            self.query_one("#manual-error", Static).update(
+                translate("manual_mount_required", self.language)
+            )
+            return
+        self.dismiss(path)
+
+
 _ASSIGNMENT_PROFILES = (
     ("Alpine Linux", "alpine", "alpine-linux", "x86_64"),
     ("Rocky Linux", "rocky-linux", "rocky-linux", "x86_64"),
     ("AlmaLinux OS", "almalinux", "almalinux", "x86_64"),
     ("Arch Linux", "arch", "archlinux", "x86_64"),
     ("Ubuntu", "ubuntu", "ubuntu", "amd64"),
+    ("Kubuntu", "ubuntu-flavors", "kubuntu", "amd64"),
+    ("Lubuntu", "ubuntu-flavors", "lubuntu", "amd64"),
+    ("Xubuntu", "ubuntu-flavors", "xubuntu", "amd64"),
+    ("Ubuntu Budgie", "ubuntu-flavors", "ubuntu-budgie", "amd64"),
+    ("Ubuntu Unity", "ubuntu-flavors", "ubuntu-unity", "amd64"),
+    ("Ubuntu MATE", "ubuntu-flavors", "ubuntu-mate", "amd64"),
+    ("Ubuntu Cinnamon", "ubuntu-flavors", "ubuntucinnamon", "amd64"),
+    ("Edubuntu", "ubuntu-flavors", "edubuntu", "amd64"),
+    ("Ubuntu Studio", "ubuntu-flavors", "ubuntustudio", "amd64"),
+    ("Ubuntu Kylin", "ubuntu-flavors", "ubuntukylin", "amd64"),
     ("Debian", "debian", "debian", "amd64"),
     ("Debian Live", "debian", "debian", "amd64"),
     ("Fedora", "fedora", "fedora", "x86_64"),
@@ -123,8 +229,63 @@ _ASSIGNMENT_PROFILES = (
     ("Nobara", "nobara", "nobara", "x86_64"),
     ("Vanilla OS", "vanilla-os", "vanilla-os", "amd64"),
     ("Windows 11", "windows-11", "windows-11", "x86_64"),
+    ("Windows 10", "windows-10", "windows-10", "x86_64"),
+    ("Windows Server Evaluation", "windows-server", "windows-server", "x86_64"),
     ("Zorin OS", "zorin-os", "zorin-os", "x86_64"),
+    ("netboot.xyz", "netboot-xyz", "netboot-xyz", "x86_64"),
+    ("Gentoo Linux", "gentoo", "gentoo", "amd64"),
+    ("Hiren's BootCD PE", "hirens-bootcd-pe", "hirens-bootcd-pe", "x86_64"),
+    ("ShredOS", "shredos", "shredos", "x86_64"),
+    ("NetBSD", "netbsd", "netbsd", "amd64"),
+    ("PorteuX", "porteux", "porteux", "x86_64"),
+    ("GhostBSD", "ghostbsd", "ghostbsd", "amd64"),
+    ("Haiku", "haiku", "haiku", "x86_64"),
+    ("Solus", "solus", "solus", "x86_64"),
+    ("TrueNAS Community Edition", "truenas", "truenas", "x86_64"),
+    ("KDE neon", "kde-neon", "kde-neon", "x86_64"),
+    ("Parrot OS", "parrot-os", "parrot-os", "amd64"),
+    ("Void Linux", "void-linux", "void-linux", "x86_64"),
+    ("Mageia", "mageia", "mageia", "x86_64"),
+    ("CentOS Stream", "centos-stream", "centos-stream", "x86_64"),
 )
+
+_VOLUME_PROFILE_HINTS = (
+    ("ENDEAVOUR", "endeavouros"),
+    ("SYSTEMRESCUE", "systemrescue"),
+    ("RESCUEZILLA", "rescuezilla"),
+    ("CLONEZILLA", "clonezilla"),
+    ("LINUX MINT", "linux-mint"),
+    ("GPARTED", "gparted-live"),
+    ("OPENSUSE", "opensuse-tumbleweed"),
+    ("NETBOOT.XYZ", "netboot-xyz"),
+    ("HIREN", "hirens-bootcd-pe"),
+    ("SHREDOS", "shredos"),
+    ("GENTOO", "gentoo"),
+    ("NETBSD", "netbsd"),
+    ("FREEBSD", "freebsd"),
+    ("PROXMOX", "proxmox"),
+    ("CACHYOS", "cachyos"),
+    ("MANJARO", "manjaro"),
+    ("NOBARA", "nobara"),
+    ("VANILLA", "vanilla-os"),
+    ("ZORIN", "zorin-os"),
+    ("KALI", "kali-linux"),
+    ("NIXOS", "nixos"),
+    ("FEDORA", "fedora"),
+    ("DEBIAN", "debian"),
+    ("UBUNTU", "ubuntu"),
+    ("ARCH", "arch"),
+)
+
+
+def _suggested_profile(volume_id: str | None) -> str | None:
+    if not volume_id:
+        return None
+    normalized = volume_id.upper()
+    return next(
+        (provider_id for marker, provider_id in _VOLUME_PROFILE_HINTS if marker in normalized),
+        None,
+    )
 
 
 class SettingsDialog(ModalScreen[Settings | None]):
@@ -237,22 +398,32 @@ class AssignIdentity(ModalScreen[IsoIdentity | None]):
     #assign-dialog Button { margin-right: 1; }
     """
 
-    def __init__(self, path: Path, language: str) -> None:
+    def __init__(self, path: Path, language: str, volume_id: str | None = None) -> None:
         super().__init__()
         self.path = path
         self.language = language
+        self.volume_id = volume_id
 
     def compose(self) -> ComposeResult:
         options = [
             (label, f"{provider_id}|{product_id}|{architecture}")
             for label, provider_id, product_id, architecture in _ASSIGNMENT_PROFILES
         ]
+        suggested = _suggested_profile(self.volume_id)
+        initial = next(
+            (value for _label, value in options if value.split("|", 1)[0] == suggested),
+            options[0][1],
+        )
         with VerticalScroll(id="assign-dialog"):
             yield Static(f"[bold]{translate('assign_title', self.language)}[/bold]")
             yield Static(self.path.name)
+            if self.volume_id:
+                yield Static(
+                    translate("volume_id_hint", self.language).format(volume_id=self.volume_id)
+                )
             yield Static(translate("assign_help", self.language))
             yield Static(translate("provider_product", self.language))
-            yield Select(options, allow_blank=False, value=options[0][1], id="assign-profile")
+            yield Select(options, allow_blank=False, value=initial, id="assign-profile")
             yield Static(translate("edition", self.language))
             yield Input(placeholder="desktop, server, core, kde …", id="assign-edition")
             yield Static(translate("flavor", self.language))
@@ -314,6 +485,119 @@ class AssignIdentity(ModalScreen[IsoIdentity | None]):
         )
 
 
+@dataclass(frozen=True)
+class _AddProfile:
+    label: str
+    provider_id: str
+    product_id: str
+    edition: str | None
+    channel: str
+    architecture: str
+
+
+class AddIsoDialog(ModalScreen[IsoIdentity | None]):
+    CSS = """
+    AddIsoDialog { align: center middle; }
+    #add-dialog {
+        width: 80; max-width: 95%; height: auto; max-height: 95%;
+        border: thick $accent; background: $surface; padding: 1 2;
+    }
+    #add-dialog Input, #add-dialog Select { margin-bottom: 1; }
+    #add-error { color: $error; height: auto; }
+    #add-dialog Button { margin-right: 1; }
+    """
+
+    def __init__(self, providers: tuple[Provider, ...], language: str) -> None:
+        super().__init__()
+        self.language = language
+        self.profiles = tuple(
+            _AddProfile(
+                (
+                    provider.display_name
+                    if len(provider.products) == 1
+                    else f"{provider.display_name} — {product}"
+                ),
+                provider.provider_id,
+                product,
+                provider.capabilities.editions[0] if provider.capabilities.editions else None,
+                provider.capabilities.channels[0],
+                provider.capabilities.architectures[0],
+            )
+            for provider in sorted(providers, key=lambda item: item.display_name.lower())
+            for product in provider.products
+            if provider.capabilities.channels and provider.capabilities.architectures
+        )
+
+    def compose(self) -> ComposeResult:
+        if not self.profiles:
+            with VerticalScroll(id="add-dialog"):
+                yield Static(translate("no_add_providers", self.language), id="add-error")
+                yield Button(translate("cancel", self.language), id="add-cancel")
+            return
+        profile = self.profiles[0]
+        options = [(item.label, str(index)) for index, item in enumerate(self.profiles)]
+        with VerticalScroll(id="add-dialog"):
+            yield Static(f"[bold]{translate('add_title', self.language)}[/bold]")
+            yield Static(translate("add_help", self.language))
+            yield Select(options, allow_blank=False, value="0", id="add-profile")
+            yield Static(translate("edition", self.language))
+            yield Input(profile.edition or "", id="add-edition")
+            yield Static(translate("flavor", self.language))
+            yield Input(id="add-flavor")
+            yield Static(translate("channel", self.language))
+            yield Input(profile.channel, id="add-channel")
+            yield Static(translate("architecture", self.language))
+            yield Input(profile.architecture, id="add-architecture")
+            yield Static(translate("language", self.language))
+            yield Input(id="add-language")
+            yield Static("", id="add-error")
+            with Horizontal():
+                yield Button(translate("prepare_add", self.language), id="add-save")
+                yield Button(translate("cancel", self.language), id="add-cancel")
+
+    def on_select_changed(self, event: Select.Changed) -> None:
+        if event.select.id != "add-profile" or event.value is Select.NULL:
+            return
+        profile = self.profiles[int(str(event.value))]
+        self.query_one("#add-edition", Input).value = profile.edition or ""
+        self.query_one("#add-flavor", Input).value = ""
+        self.query_one("#add-channel", Input).value = profile.channel
+        self.query_one("#add-architecture", Input).value = profile.architecture
+        self.query_one("#add-language", Input).value = ""
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "add-cancel":
+            self.dismiss(None)
+            return
+        if event.button.id != "add-save" or not self.profiles:
+            return
+        selected = self.query_one("#add-profile", Select).value
+        channel = self.query_one("#add-channel", Input).value.strip().lower()
+        architecture = self.query_one("#add-architecture", Input).value.strip().lower()
+        if selected is Select.NULL or not channel or not architecture:
+            self.query_one("#add-error", Static).update(translate("add_required", self.language))
+            return
+        profile = self.profiles[int(str(selected))]
+
+        def optional(input_id: str) -> str | None:
+            value = self.query_one(input_id, Input).value.strip().lower()
+            return value or None
+
+        self.dismiss(
+            IsoIdentity(
+                profile.provider_id,
+                profile.product_id,
+                optional("#add-edition"),
+                optional("#add-flavor"),
+                channel,
+                architecture,
+                optional("#add-language"),
+                None,
+                None,
+            )
+        )
+
+
 class VentoyDepotApp(App[None]):
     CSS = """
     #content { width: 96%; max-width: 150; margin: 1 2; }
@@ -326,9 +610,14 @@ class VentoyDepotApp(App[None]):
     TITLE = "Ventoy Depot"
     BINDINGS = [
         ("r", "refresh", "Refresh"),
+        ("m", "manual_mount", "Manual mountpoint"),
         ("s", "scan", "Check updates"),
         ("space", "toggle_selection", "Select ISO"),
+        ("x", "replace_old", "Replace old ISO"),
         ("a", "assign_identity", "Assign ISO"),
+        ("n", "add_iso", "Add new ISO"),
+        ("v", "verify_iso", "Verify ISO"),
+        ("t", "empty_trash", "Empty trash"),
         ("ctrl+s", "settings", "Settings"),
         ("q", "quit", "Quit"),
     ]
@@ -355,16 +644,23 @@ class VentoyDepotApp(App[None]):
             yield Static("", id="device-card")
             with Horizontal(id="actions"):
                 yield Button(translate("refresh", self.language), id="refresh", variant="primary")
+                yield Button(translate("manual_mount", self.language), id="manual-mount")
                 yield Button(translate("check_updates", self.language), id="scan", disabled=True)
                 yield Button(translate("assign_iso", self.language), id="assign", disabled=True)
+                yield Button(translate("add_iso", self.language), id="add", disabled=True)
+                yield Button(translate("verify_iso", self.language), id="verify", disabled=True)
                 yield Button(
                     translate("update_selected", self.language),
                     id="update",
                     disabled=True,
                     variant="warning",
                 )
+                yield Button(translate("replace_old", self.language), id="replace", disabled=True)
                 yield Button(translate("cancel_run", self.language), id="cancel-run", disabled=True)
                 yield Button(translate("retry_failed", self.language), id="retry", disabled=True)
+                yield Button(
+                    translate("empty_trash", self.language), id="empty-trash", disabled=True
+                )
                 yield Button(translate("settings", self.language), id="settings")
             yield ProgressBar(total=100, show_eta=True, id="progress")
             yield DataTable(id="isos", cursor_type="row", zebra_stripes=True)
@@ -389,9 +685,15 @@ class VentoyDepotApp(App[None]):
         self.query_one("#scan", Button).disabled = device is None
         self.query_one("#update", Button).disabled = True
         self.query_one("#assign", Button).disabled = device is None
+        self.query_one("#add", Button).disabled = device is None
+        self.query_one("#replace", Button).disabled = True
+        self.query_one("#verify", Button).disabled = True
+        self.query_one("#empty-trash", Button).disabled = device is None
         self.plan = None
+        self.row_items.clear()
         self.selected_paths.clear()
         self.failed_paths.clear()
+        self.query_one("#isos", DataTable).clear()
         if device is None:
             self.query_one("#device-card", Static).update("")
             return
@@ -407,16 +709,26 @@ class VentoyDepotApp(App[None]):
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "refresh":
             self.action_refresh()
+        elif event.button.id == "manual-mount":
+            self.action_manual_mount()
         elif event.button.id == "scan":
             self.action_scan()
         elif event.button.id == "assign":
             self.action_assign_identity()
+        elif event.button.id == "add":
+            self.action_add_iso()
+        elif event.button.id == "verify":
+            self.action_verify_iso()
         elif event.button.id == "update":
             self.action_update()
+        elif event.button.id == "replace":
+            self.action_replace_old()
         elif event.button.id == "cancel-run":
             self.action_cancel_run()
         elif event.button.id == "retry":
             self.action_retry_failed()
+        elif event.button.id == "empty-trash":
+            self.action_empty_trash()
         elif event.button.id == "settings":
             self.action_settings()
 
@@ -438,7 +750,11 @@ class VentoyDepotApp(App[None]):
         self.failed_paths.clear()
         self.query_one("#scan", Button).disabled = True
         self.query_one("#update", Button).disabled = True
+        self.query_one("#replace", Button).disabled = True
         self.query_one("#assign", Button).disabled = True
+        self.query_one("#add", Button).disabled = True
+        self.query_one("#verify", Button).disabled = True
+        self.query_one("#empty-trash", Button).disabled = True
         self.query_one("#device-card", Static).update("")
         self.query_one("#isos", DataTable).clear()
         self.query_one("#device", Select).set_options(
@@ -454,6 +770,27 @@ class VentoyDepotApp(App[None]):
         self.push_screen(
             SettingsDialog(self.settings, self.language),
             self._settings_chosen,
+        )
+
+    def action_manual_mount(self) -> None:
+        if not self.operation_running:
+            self.push_screen(ManualMountDialog(self.language), self._manual_mount_chosen)
+
+    def _manual_mount_chosen(self, path: Path | None) -> None:
+        if path is None:
+            return
+        try:
+            device = manual_device(path)
+        except (DeviceError, OSError) as error:
+            self._show_error(str(error))
+            return
+        self.devices[device.identifier] = device
+        self.query_one("#device", Select).set_options(
+            [(item.display_name, item.identifier) for item in self.devices.values()]
+        )
+        self.query_one("#device", Select).value = device.identifier
+        self.query_one("#status", Static).update(
+            translate("manual_mount_selected", self.language).format(path=device.mount_path)
         )
 
     def _settings_chosen(self, settings: Settings | None) -> None:
@@ -477,6 +814,76 @@ class VentoyDepotApp(App[None]):
         if device is not None:
             self._set_running(True, translate("checking_metadata", self.language))
             self._build_plan(device)
+
+    def action_add_iso(self) -> None:
+        if self.operation_running:
+            return
+        selected = self.query_one("#device", Select).value
+        device = self.devices.get(str(selected))
+        if device is None:
+            return
+        try:
+            providers = tuple(provider_map().values())
+        except Exception as error:
+            self._show_error(str(error))
+            return
+        self.push_screen(
+            AddIsoDialog(providers, self.language),
+            partial(self._new_iso_chosen, device),
+        )
+
+    def action_verify_iso(self) -> None:
+        if self.operation_running:
+            return
+        table = self.query_one("#isos", DataTable)
+        if not self.row_items or table.cursor_row >= len(self.row_items):
+            return
+        item = self.row_items[table.cursor_row]
+        if not item.local.path.is_file():
+            self.query_one("#status", Static).update(translate("verify_missing", self.language))
+            return
+        self._set_running(True, translate("verifying_iso", self.language))
+        self._verify_iso(item)
+
+    @work(thread=True, exclusive=True, group="metadata")
+    def _verify_iso(self, item: PlanItem) -> None:
+        try:
+            result = verify_detected_iso(item.local, item.target)
+        except Exception as error:
+            self.call_from_thread(self._show_error, str(error))
+        else:
+            self.call_from_thread(self._show_verification, result)
+
+    def _show_verification(self, result: LocalVerification) -> None:
+        self._set_running(False, "")
+        if result.verified is True:
+            message = translate("verify_match", self.language)
+            color = "green"
+        elif result.verified is False:
+            message = translate("verify_mismatch", self.language)
+            color = "red"
+        else:
+            message = translate("verify_hash_only", self.language)
+            color = "yellow"
+        self.query_one("#status", Static).update(
+            f"[{color}]{message}[/{color}]\n{result.algorithm.upper()}: {result.checksum}"
+        )
+
+    def _new_iso_chosen(self, device: Device, identity: IsoIdentity | None) -> None:
+        if identity is not None:
+            self._build_add_plan(device, identity)
+
+    @work(thread=True, exclusive=True, group="metadata")
+    def _build_add_plan(self, device: Device, identity: IsoIdentity) -> None:
+        self.call_from_thread(
+            self._set_running, True, translate("resolving_new_iso", self.language)
+        )
+        try:
+            plan = build_add_plan(device, identity, refresh=True)
+        except Exception as error:
+            self.call_from_thread(self._show_error, str(error))
+        else:
+            self.call_from_thread(self._show_plan, plan)
 
     @work(thread=True, exclusive=True, group="metadata")
     def _build_plan(self, device: Device) -> None:
@@ -530,7 +937,9 @@ class VentoyDepotApp(App[None]):
             target = item.target
             selected = item.local.path in self.selected_paths
             messages = (*item.blocking_errors, *item.warnings)
-            status = "; ".join(messages) if messages else item.action.value.upper()
+            status = item.action.value.upper()
+            if messages:
+                status += ": " + "; ".join(messages)
             table.add_row(
                 Text("[x]" if selected else "[ ]"),
                 product,
@@ -545,6 +954,12 @@ class VentoyDepotApp(App[None]):
         if self.row_items:
             table.move_cursor(row=min(cursor_row, len(self.row_items) - 1), scroll=False)
         self.query_one("#update", Button).disabled = not self.selected_paths
+        self.query_one("#replace", Button).disabled = not any(
+            item.replacement_allowed for item in self.row_items
+        )
+        self.query_one("#verify", Button).disabled = not any(
+            item.local.path.is_file() for item in self.row_items
+        )
 
     def action_toggle_selection(self) -> None:
         if self.operation_running:
@@ -575,9 +990,31 @@ class VentoyDepotApp(App[None]):
             )
             return
         self.push_screen(
-            AssignIdentity(item.local.path, self.language),
+            AssignIdentity(item.local.path, self.language, item.local.volume_id),
             partial(self._assignment_chosen, item.local.path),
         )
+
+    def action_replace_old(self) -> None:
+        if self.operation_running or self.plan is None:
+            return
+        table = self.query_one("#isos", DataTable)
+        if not self.row_items or table.cursor_row >= len(self.row_items):
+            return
+        item = self.row_items[table.cursor_row]
+        try:
+            self.plan = toggle_replace_action(self.plan, item.local.path)
+        except ValueError:
+            self.query_one("#status", Static).update(
+                translate("replace_unavailable", self.language)
+            )
+            return
+        self.row_items = list(self.plan.items)
+        changed = self.row_items[table.cursor_row]
+        if changed.writable:
+            self.selected_paths.add(changed.local.path)
+        else:
+            self.selected_paths.discard(changed.local.path)
+        self._render_plan()
 
     def _assignment_chosen(self, path: Path, identity: IsoIdentity | None) -> None:
         selected = self.query_one("#device", Select).value
@@ -642,6 +1079,49 @@ class VentoyDepotApp(App[None]):
             self.push_screen(
                 ConfirmUpdatePlan(self.plan, items, self.language), self._confirm_updates
             )
+
+    def action_empty_trash(self) -> None:
+        if self.operation_running:
+            return
+        selected = self.query_one("#device", Select).value
+        device = self.devices.get(str(selected))
+        if device is None:
+            return
+        try:
+            revalidate_device(device)
+            entries = trash_entries(device.mount_path)
+        except Exception as error:
+            self._show_error(str(error))
+            return
+        if not entries:
+            self.query_one("#status", Static).update(translate("empty_trash_empty", self.language))
+            return
+        self.push_screen(
+            ConfirmEmptyTrash(entries, self.language),
+            partial(self._confirm_empty_trash, device, entries),
+        )
+
+    def _confirm_empty_trash(
+        self, device: Device, entries: tuple[Path, ...], confirmed: bool | None
+    ) -> None:
+        if confirmed:
+            self._set_running(True, translate("emptying_trash", self.language))
+            self._empty_trash(device, entries)
+
+    @work(thread=True, exclusive=True, group="transfer")
+    def _empty_trash(self, device: Device, entries: tuple[Path, ...]) -> None:
+        try:
+            removed = empty_trash(device, entries)
+        except Exception as error:
+            self.call_from_thread(self._show_error, str(error))
+        else:
+            self.call_from_thread(self._trash_emptied, len(removed))
+
+    def _trash_emptied(self, count: int) -> None:
+        self._set_running(False, "")
+        self.query_one("#status", Static).update(
+            f"[green]{translate('trash_emptied', self.language).format(count=count)}[/green]"
+        )
 
     @work(thread=True, exclusive=True, group="transfer")
     def _perform_updates(self, plan: UpdatePlan, items: tuple[PlanItem, ...]) -> None:
@@ -743,11 +1223,39 @@ class VentoyDepotApp(App[None]):
 
     def _set_running(self, running: bool, message: str) -> None:
         self.operation_running = running
-        for button_id in ("refresh", "scan", "assign", "update", "retry", "settings"):
+        for button_id in (
+            "refresh",
+            "manual-mount",
+            "scan",
+            "assign",
+            "add",
+            "verify",
+            "replace",
+            "update",
+            "retry",
+            "empty-trash",
+            "settings",
+        ):
             self.query_one(f"#{button_id}", Button).disabled = (
                 running
+                or (
+                    button_id == "replace"
+                    and not any(item.replacement_allowed for item in self.row_items)
+                )
+                or (
+                    button_id == "add"
+                    and self.devices.get(str(self.query_one("#device", Select).value)) is None
+                )
+                or (
+                    button_id == "verify"
+                    and not any(item.local.path.is_file() for item in self.row_items)
+                )
                 or (button_id == "update" and not self.selected_paths)
                 or (button_id == "retry" and not self.failed_paths)
+                or (
+                    button_id == "empty-trash"
+                    and self.devices.get(str(self.query_one("#device", Select).value)) is None
+                )
             )
         self.query_one("#cancel-run", Button).disabled = not self.transfer_running
         self.query_one("#device", Select).disabled = running

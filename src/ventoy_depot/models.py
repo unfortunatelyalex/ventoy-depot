@@ -84,6 +84,7 @@ class DetectedIso:
     confidence: float
     detection_source: str
     sha256: str | None = None
+    volume_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -96,6 +97,7 @@ class PlanItem:
     verification_level: VerificationLevel
     warnings: tuple[str, ...] = ()
     blocking_errors: tuple[str, ...] = ()
+    replacement_allowed: bool = False
 
     @property
     def writable(self) -> bool:
@@ -111,6 +113,15 @@ class UpdatePlan:
     @property
     def required_bytes(self) -> int:
         return sum(item.required_bytes or 0 for item in self.items if item.writable)
+
+
+@dataclass(frozen=True)
+class LocalVerification:
+    path: Path
+    algorithm: str
+    checksum: str
+    expected: str | None
+    verified: bool | None
 
 
 def to_jsonable(value: Any) -> Any:

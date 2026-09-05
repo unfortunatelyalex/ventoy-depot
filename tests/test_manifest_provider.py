@@ -74,6 +74,21 @@ def test_manifest_provider_detects_without_executing_code() -> None:
     )
 
 
+def test_manifest_provider_normalizes_x86_dash_64_architecture() -> None:
+    value = manifest()
+    value["capabilities"]["architectures"] = ["x86_64"]  # type: ignore[index]
+    value["detection"][0]["regex"] = (  # type: ignore[index]
+        r"^example-(?P<edition>desktop|paid)-(?P<version>[0-9.]+)-"
+        r"(?P<architecture>x86-64)\.iso$"
+    )
+    value["detection"][0]["identity"]["architecture"] = "$group:architecture"  # type: ignore[index]
+
+    detected = ManifestProvider(value).detect(Path("example-desktop-2.1-x86-64.iso"))
+
+    assert detected is not None and detected.identity is not None
+    assert detected.identity.architecture == "x86_64"
+
+
 def test_manifest_detection_regex_has_a_runtime_timeout() -> None:
     value = manifest()
     value["detection"] = [
@@ -147,6 +162,31 @@ def test_manifest_provider_resolves_checksum_list_without_python_plugin(monkeypa
     assert artifact.checksum == "a" * 64
     assert artifact.identity is not None
     assert artifact.identity.variant_key() == installed.variant_key()
+
+
+def test_manifest_url_template_can_address_iso_named_directory(monkeypatch) -> None:
+    value = manifest()
+    source = value["release_sources"][0]  # type: ignore[index]
+    source["download"]["url_template"] = (  # type: ignore[index]
+        "https://downloads.example.test/{stem}/{filename}"
+    )
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, url: str) -> bytes:
+            assert url == "https://downloads.example.test/SHA256SUMS"
+            return f"{'a' * 64}  example-desktop-2.1-amd64.iso\n".encode()
+
+    monkeypatch.setattr("ventoy_depot.providers.manifest.SafeHttpClient", FakeClient)
+    artifact = ManifestProvider(value).resolve(
+        IsoIdentity("example", "example-live", "desktop", None, "stable", "amd64", None, "1", None)
+    )
+
+    assert artifact.download_url == (
+        "https://downloads.example.test/example-desktop-2.1-amd64/example-desktop-2.1-amd64.iso"
+    )
 
 
 def test_detection_only_manifest_variant_cannot_resolve() -> None:

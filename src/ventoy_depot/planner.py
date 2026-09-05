@@ -20,6 +20,7 @@ from .models import (
     VerificationLevel,
 )
 from .providers import Provider, provider_map
+from .security import safe_filename
 
 
 def build_plan(
@@ -85,23 +86,44 @@ def build_plan(
             if target and target.verification_level == VerificationLevel.UNVERIFIED:
                 errors.append("Automatic updates require an official checksum.")
         action = UpdateAction.ADD if target and not errors else UpdateAction.SKIP
-        if target and identity and provider is not None and not provider.is_newer(target, identity):
+        newer = bool(
+            target and identity and provider is not None and provider.is_newer(target, identity)
+        )
+        if target and identity and provider is not None and not newer:
             warnings.append("Already current.")
             action = UpdateAction.SKIP
         destination = detected.path.parent / target.filename if target else None
+        replacement_allowed = bool(
+            newer
+            and target
+            and not errors
+            and provider is not None
+            and not getattr(provider, "custom", False)
+        )
         if destination and destination.exists():
-            warnings.append(f"Target ISO already exists: {destination.name}")
+            if destination.resolve() == detected.path.resolve() and replacement_allowed:
+                warnings.append("Target uses the existing filename; choose REPLACE explicitly.")
+            else:
+                warnings.append(f"Target ISO already exists: {destination.name}")
+                replacement_allowed = False
             action = UpdateAction.SKIP
         elif destination and destination in planned_destinations:
             errors.append(f"Another selected ISO has the same target path: {destination.name}")
             action = UpdateAction.SKIP
+            replacement_allowed = False
         if not os.access(device.mount_path, os.W_OK):
             errors.append("The Ventoy drive is not writable.")
             action = UpdateAction.SKIP
+            replacement_allowed = False
         required = target.size_bytes if target else None
-        if required is not None and action != UpdateAction.SKIP and required > remaining_free:
+        if (
+            required is not None
+            and (action != UpdateAction.SKIP or replacement_allowed)
+            and required > remaining_free
+        ):
             errors.append("Insufficient free space on the Ventoy drive.")
             action = UpdateAction.SKIP
+            replacement_allowed = False
         if action != UpdateAction.SKIP:
             if destination is not None:
                 planned_destinations.add(destination)
@@ -110,14 +132,89 @@ def build_plan(
         level = target.verification_level if target else VerificationLevel.UNVERIFIED
         items.append(
             PlanItem(
-                detected, target, action, free, required, level, tuple(warnings), tuple(errors)
+                detected,
+                target,
+                action,
+                free,
+                required,
+                level,
+                tuple(warnings),
+                tuple(errors),
+                replacement_allowed,
             )
         )
+    return _make_plan(device, tuple(items))
+
+
+def build_add_plan(device: Device, identity: IsoIdentity, refresh: bool = False) -> UpdatePlan:
+    """Resolve one explicitly selected product into a safe add-only plan."""
+    providers = provider_map(refresh=refresh)
+    provider = providers.get(identity.provider_id)
+    if provider is None:
+        raise ValueError(f"Unknown provider: {identity.provider_id}")
+    target = _resolve_target(provider, identity)
+    errors: list[str] = []
+    if target.verification_level == VerificationLevel.UNVERIFIED:
+        errors.append("Automatic downloads require an official checksum.")
+    destination = device.mount_path / target.filename
+    if destination.exists():
+        errors.append(f"Target ISO already exists: {destination.name}")
+    if not os.access(device.mount_path, os.W_OK):
+        errors.append("The Ventoy drive is not writable.")
+    free = shutil.disk_usage(device.mount_path).free
+    if target.size_bytes is not None and target.size_bytes > free:
+        errors.append("Insufficient free space on the Ventoy drive.")
+    action = UpdateAction.ADD if not errors else UpdateAction.SKIP
+    local = DetectedIso(destination, identity, 1.0, "explicit-add-request")
+    item = PlanItem(
+        local,
+        target,
+        action,
+        free,
+        target.size_bytes,
+        target.verification_level,
+        (),
+        tuple(errors),
+    )
+    return _make_plan(device, (item,))
+
+
+def toggle_replace_action(plan: UpdatePlan, path: os.PathLike[str]) -> UpdatePlan:
+    """Toggle one item between its safe default and an explicit replacement."""
+    changed = False
+    items: list[PlanItem] = []
+    for item in plan.items:
+        if item.local.path != path:
+            items.append(item)
+            continue
+        changed = True
+        if item.action == UpdateAction.REPLACE:
+            assert item.target is not None
+            destination = item.local.path.parent / item.target.filename
+            action = (
+                UpdateAction.SKIP
+                if destination.exists() or destination.resolve() == item.local.path.resolve()
+                else UpdateAction.ADD
+            )
+        else:
+            if not item.replacement_allowed or item.target is None or item.blocking_errors:
+                raise ValueError("This ISO cannot be replaced automatically.")
+            action = UpdateAction.REPLACE
+        items.append(replace(item, action=action))
+    if not changed:
+        raise ValueError("The selected ISO is not part of this update plan.")
+    required = sum(item.required_bytes or 0 for item in items if item.action != UpdateAction.SKIP)
+    if required > shutil.disk_usage(plan.device.mount_path).free:
+        raise ValueError("Insufficient free space for the selected update actions.")
+    return _make_plan(plan.device, tuple(items))
+
+
+def _make_plan(device: Device, items: tuple[PlanItem, ...]) -> UpdatePlan:
     seed = "\n".join(
         f"{item.local.path}:{item.local.identity}:{item.target}:{item.action}" for item in items
     )
     plan_id = hashlib.sha256(seed.encode()).hexdigest()[:16]
-    return UpdatePlan(device, tuple(items), plan_id)
+    return UpdatePlan(device, items, plan_id)
 
 
 def _resolve_target(provider: Provider, identity: IsoIdentity) -> ReleaseArtifact:
@@ -125,4 +222,5 @@ def _resolve_target(provider: Provider, identity: IsoIdentity) -> ReleaseArtifac
     if target.identity is None:
         raise ValueError("Provider did not declare the target ISO identity.")
     provider.validate_binding(identity, target.identity)
+    safe_filename(target.filename)
     return target

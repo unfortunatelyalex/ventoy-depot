@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import hashlib
+import os
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -22,6 +24,8 @@ from ventoy_depot.transfer import (
     _trash,
     _verify_openpgp,
     apply_item,
+    empty_trash,
+    trash_entries,
 )
 
 
@@ -98,6 +102,111 @@ def test_verified_download_is_atomically_added_and_old_iso_remains(
     assert destination.read_bytes() == Client.data
     assert plan_item.local.path.read_bytes() == b"old ISO"
     assert not destination.with_name(destination.name + ".partial").exists()
+
+
+def same_filename_replacement(root: Path, checksum: str) -> PlanItem:
+    original = item(root, checksum)
+    assert original.target is not None
+    target = replace(original.target, filename=original.local.path.name)
+    return replace(
+        original,
+        target=target,
+        action=UpdateAction.REPLACE,
+        replacement_allowed=True,
+    )
+
+
+def test_same_filename_replace_moves_verified_old_iso_to_trash(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / ".ventoy").touch()
+    Client.data = b"new verified ISO"
+    monkeypatch.setattr("ventoy_depot.transfer.SafeHttpClient", Client)
+    monkeypatch.setattr("ventoy_depot.transfer.revalidate_device", lambda device: device)
+    plan_item = same_filename_replacement(tmp_path, hashlib.sha256(Client.data).hexdigest())
+
+    destination = apply_item(plan_item, cache_dir=tmp_path / "cache")
+
+    assert destination == plan_item.local.path
+    assert destination.read_bytes() == Client.data
+    trashed = tuple((tmp_path / ".ventoy-depot" / "trash").glob("*.iso"))
+    assert len(trashed) == 1
+    assert trashed[0].read_bytes() == b"old ISO"
+
+
+def test_same_filename_publish_failure_restores_old_iso(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / ".ventoy").touch()
+    Client.data = b"new verified ISO"
+    monkeypatch.setattr("ventoy_depot.transfer.SafeHttpClient", Client)
+    monkeypatch.setattr("ventoy_depot.transfer.revalidate_device", lambda device: device)
+    plan_item = same_filename_replacement(tmp_path, hashlib.sha256(Client.data).hexdigest())
+    real_replace = os.replace
+    destination = plan_item.local.path
+
+    def fail_new_publish(source: Path | str, target: Path | str) -> None:
+        if Path(source).name.endswith(".partial") and Path(target) == destination:
+            raise OSError("publish failed")
+        real_replace(source, target)
+
+    monkeypatch.setattr("ventoy_depot.transfer.os.replace", fail_new_publish)
+
+    with pytest.raises(OSError, match="publish failed"):
+        apply_item(plan_item, cache_dir=tmp_path / "cache")
+
+    assert destination.read_bytes() == b"old ISO"
+    assert not destination.with_name(destination.name + ".partial").exists()
+
+
+def test_same_filename_restore_failure_reports_recoverable_trash_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / ".ventoy").touch()
+    Client.data = b"new verified ISO"
+    monkeypatch.setattr("ventoy_depot.transfer.SafeHttpClient", Client)
+    monkeypatch.setattr("ventoy_depot.transfer.revalidate_device", lambda device: device)
+    plan_item = same_filename_replacement(tmp_path, hashlib.sha256(Client.data).hexdigest())
+    real_replace = os.replace
+    destination = plan_item.local.path
+
+    def fail_publish_and_restore(source: Path | str, target: Path | str) -> None:
+        source_path = Path(source)
+        if source_path.name.endswith(".partial") or source_path.parent.name == "trash":
+            raise OSError("simulated rename failure")
+        real_replace(source, target)
+
+    monkeypatch.setattr("ventoy_depot.transfer.os.replace", fail_publish_and_restore)
+
+    with pytest.raises(TransferError, match="remains in the Ventoy trash"):
+        apply_item(plan_item, cache_dir=tmp_path / "cache")
+
+    assert not destination.exists()
+    trashed = tuple((tmp_path / ".ventoy-depot" / "trash").glob("*.iso"))
+    assert len(trashed) == 1
+    assert trashed[0].read_bytes() == b"old ISO"
+
+
+def test_same_filename_replace_rejects_concurrent_original_change(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / ".ventoy").touch()
+    Client.data = b"new verified ISO"
+    monkeypatch.setattr("ventoy_depot.transfer.SafeHttpClient", Client)
+    monkeypatch.setattr("ventoy_depot.transfer.revalidate_device", lambda device: device)
+    plan_item = same_filename_replacement(tmp_path, hashlib.sha256(Client.data).hexdigest())
+
+    def change_original(source: Path, partial: Path, _progress: object) -> None:
+        partial.write_bytes(source.read_bytes())
+        plan_item.local.path.write_bytes(b"changed concurrently")
+
+    monkeypatch.setattr("ventoy_depot.transfer._copy", change_original)
+
+    with pytest.raises(TransferError, match="changed during"):
+        apply_item(plan_item, cache_dir=tmp_path / "cache")
+
+    assert plan_item.local.path.read_bytes() == b"changed concurrently"
+    assert not plan_item.local.path.with_name(plan_item.local.path.name + ".partial").exists()
 
 
 def test_bad_checksum_never_creates_visible_or_partial_iso(
@@ -326,3 +435,70 @@ def test_trash_rejects_symlinked_metadata_directory(tmp_path: Path) -> None:
 
     assert iso.exists()
     assert not (outside / "trash" / iso.name).exists()
+
+
+def test_empty_trash_removes_only_inventory_after_device_revalidation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    trash = tmp_path / ".ventoy-depot" / "trash"
+    trash.mkdir(parents=True)
+    first = trash / "old.iso"
+    second = trash / "old.1.iso"
+    first.write_bytes(b"one")
+    second.write_bytes(b"two")
+    outside = tmp_path / "keep.iso"
+    outside.write_bytes(b"keep")
+    checks: list[str] = []
+    monkeypatch.setattr(
+        "ventoy_depot.transfer.revalidate_device",
+        lambda device: checks.append(device.identifier),
+    )
+    device = Device("usb", "Ventoy", tmp_path, 100, 50, True, True)
+
+    removed = empty_trash(device)
+
+    assert removed == (second, first)
+    assert not first.exists()
+    assert not second.exists()
+    assert outside.read_bytes() == b"keep"
+    assert len(checks) == 3
+
+
+def test_trash_inventory_rejects_symlinked_entries(tmp_path: Path) -> None:
+    trash = tmp_path / ".ventoy-depot" / "trash"
+    trash.mkdir(parents=True)
+    outside = tmp_path / "outside.iso"
+    outside.write_bytes(b"keep")
+    (trash / "old.iso").symlink_to(outside)
+
+    with pytest.raises(Exception, match="Symlinked trash entries"):
+        trash_entries(tmp_path)
+
+    assert outside.read_bytes() == b"keep"
+
+
+def test_trash_inventory_rejects_subdirectories(tmp_path: Path) -> None:
+    nested = tmp_path / ".ventoy-depot" / "trash" / "nested"
+    nested.mkdir(parents=True)
+
+    with pytest.raises(Exception, match="non-file"):
+        trash_entries(tmp_path)
+
+
+def test_empty_trash_does_not_delete_entries_added_after_confirmation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    trash = tmp_path / ".ventoy-depot" / "trash"
+    trash.mkdir(parents=True)
+    confirmed = trash / "confirmed.iso"
+    confirmed.write_bytes(b"confirmed")
+    expected = trash_entries(tmp_path)
+    later = trash / "later.iso"
+    later.write_bytes(b"later")
+    monkeypatch.setattr("ventoy_depot.transfer.revalidate_device", lambda _device: None)
+    device = Device("usb", "Ventoy", tmp_path, 100, 50, True, True)
+
+    empty_trash(device, expected)
+
+    assert not confirmed.exists()
+    assert later.read_bytes() == b"later"

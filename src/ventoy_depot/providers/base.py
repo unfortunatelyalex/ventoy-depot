@@ -27,6 +27,10 @@ class Provider(ABC):
     origin: str = "bundled"
     custom: bool = False
 
+    @property
+    def products(self) -> tuple[str, ...]:
+        return ()
+
     @abstractmethod
     def detect(self, path: Path) -> DetectedIso | None:
         """Identify an ISO without modifying it."""
