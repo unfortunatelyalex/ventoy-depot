@@ -66,6 +66,16 @@ _MESSAGES = {
         "cancel": "Cancel",
         "cancel_run": "Cancel update",
         "retry_failed": "Retry failed",
+        "empty_trash": "Empty trash",
+        "empty_trash_title": "Permanently empty Ventoy Depot trash",
+        "empty_trash_warning": (
+            "This permanently deletes {count} previously replaced ISO file(s) ({size}). "
+            "This cannot be undone."
+        ),
+        "empty_trash_confirm": "Permanently delete",
+        "empty_trash_empty": "The Ventoy Depot trash is empty.",
+        "emptying_trash": "Permanently deleting confirmed trash files…",
+        "trash_emptied": "Permanently deleted {count} file(s) from the Ventoy Depot trash.",
         "settings": "Settings",
         "settings_title": "Ventoy Depot settings",
         "language_setting": "Interface language",
@@ -153,6 +163,18 @@ _MESSAGES = {
         "cancel": "Abbrechen",
         "cancel_run": "Update abbrechen",
         "retry_failed": "Fehler erneut versuchen",
+        "empty_trash": "Papierkorb leeren",
+        "empty_trash_title": "Ventoy-Depot-Papierkorb endgültig leeren",
+        "empty_trash_warning": (
+            "Dadurch werden {count} zuvor ersetzte ISO-Datei(en) ({size}) endgültig gelöscht. "
+            "Dies kann nicht rückgängig gemacht werden."
+        ),
+        "empty_trash_confirm": "Endgültig löschen",
+        "empty_trash_empty": "Der Ventoy-Depot-Papierkorb ist leer.",
+        "emptying_trash": "Bestätigte Papierkorbdateien werden endgültig gelöscht…",
+        "trash_emptied": (
+            "{count} Datei(en) wurden endgültig aus dem Ventoy-Depot-Papierkorb gelöscht."
+        ),
         "settings": "Einstellungen",
         "settings_title": "Ventoy-Depot-Einstellungen",
         "language_setting": "Sprache der Oberfläche",

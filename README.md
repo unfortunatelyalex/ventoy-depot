@@ -106,6 +106,8 @@ without being falsely reported as verified.
   SHA-256 or SHA-512 checksum, has been copied as `.partial`, flushed and verified.
 - Explicit replacements move old files into `.ventoy-depot/trash`; they are not
   permanently deleted by an update.
+- Emptying that trash is a separate TUI action with its own permanent-deletion dialog;
+  the device and confirmed entries are checked again before deletion.
 - A replacement must be explicitly selected and confirmed per ISO; the prior file is
   moved to `.ventoy-depot/trash` only after the new copy has been verified.
 - Release metadata and ISO downloads must use HTTPS official endpoints. An unknown ISO

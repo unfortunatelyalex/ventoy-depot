@@ -35,7 +35,7 @@ from .planner import build_add_plan, build_plan, toggle_replace_action
 from .providers import Provider, provider_map
 from .report import ItemResult, ResultStatus, RunReport
 from .security import safe_subdirectory
-from .transfer import TransferCancelled, apply_item
+from .transfer import TransferCancelled, apply_item, empty_trash, trash_entries
 
 
 class ConfirmUpdatePlan(ModalScreen[bool]):
@@ -97,6 +97,42 @@ class ConfirmUpdatePlan(ModalScreen[bool]):
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         self.dismiss(event.button.id == "confirm")
+
+
+class ConfirmEmptyTrash(ModalScreen[bool]):
+    CSS = """
+    ConfirmEmptyTrash { align: center middle; }
+    #trash-dialog {
+        width: 80%; max-width: 80; height: auto;
+        border: thick $error; background: $surface; padding: 1 2;
+    }
+    #trash-dialog Button { margin-right: 1; }
+    """
+
+    def __init__(self, entries: tuple[Path, ...], language: str) -> None:
+        super().__init__()
+        self.entries = entries
+        self.language = language
+
+    def compose(self) -> ComposeResult:
+        total = sum(entry.stat(follow_symlinks=False).st_size for entry in self.entries)
+        with Container(id="trash-dialog"):
+            yield Static(
+                f"[bold]{translate('empty_trash_title', self.language)}[/bold]\n"
+                + translate("empty_trash_warning", self.language).format(
+                    count=len(self.entries), size=f"{total / 2**30:.1f} GiB"
+                )
+            )
+            with Horizontal():
+                yield Button(
+                    translate("empty_trash_confirm", self.language),
+                    id="trash-confirm",
+                    variant="error",
+                )
+                yield Button(translate("cancel", self.language), id="trash-cancel")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        self.dismiss(event.button.id == "trash-confirm")
 
 
 _ASSIGNMENT_PROFILES = (
@@ -525,6 +561,7 @@ class VentoyDepotApp(App[None]):
         ("a", "assign_identity", "Assign ISO"),
         ("n", "add_iso", "Add new ISO"),
         ("v", "verify_iso", "Verify ISO"),
+        ("t", "empty_trash", "Empty trash"),
         ("ctrl+s", "settings", "Settings"),
         ("q", "quit", "Quit"),
     ]
@@ -564,6 +601,9 @@ class VentoyDepotApp(App[None]):
                 yield Button(translate("replace_old", self.language), id="replace", disabled=True)
                 yield Button(translate("cancel_run", self.language), id="cancel-run", disabled=True)
                 yield Button(translate("retry_failed", self.language), id="retry", disabled=True)
+                yield Button(
+                    translate("empty_trash", self.language), id="empty-trash", disabled=True
+                )
                 yield Button(translate("settings", self.language), id="settings")
             yield ProgressBar(total=100, show_eta=True, id="progress")
             yield DataTable(id="isos", cursor_type="row", zebra_stripes=True)
@@ -591,6 +631,7 @@ class VentoyDepotApp(App[None]):
         self.query_one("#add", Button).disabled = device is None
         self.query_one("#replace", Button).disabled = True
         self.query_one("#verify", Button).disabled = True
+        self.query_one("#empty-trash", Button).disabled = device is None
         self.plan = None
         self.row_items.clear()
         self.selected_paths.clear()
@@ -627,6 +668,8 @@ class VentoyDepotApp(App[None]):
             self.action_cancel_run()
         elif event.button.id == "retry":
             self.action_retry_failed()
+        elif event.button.id == "empty-trash":
+            self.action_empty_trash()
         elif event.button.id == "settings":
             self.action_settings()
 
@@ -652,6 +695,7 @@ class VentoyDepotApp(App[None]):
         self.query_one("#assign", Button).disabled = True
         self.query_one("#add", Button).disabled = True
         self.query_one("#verify", Button).disabled = True
+        self.query_one("#empty-trash", Button).disabled = True
         self.query_one("#device-card", Static).update("")
         self.query_one("#isos", DataTable).clear()
         self.query_one("#device", Select).set_options(
@@ -956,6 +1000,49 @@ class VentoyDepotApp(App[None]):
                 ConfirmUpdatePlan(self.plan, items, self.language), self._confirm_updates
             )
 
+    def action_empty_trash(self) -> None:
+        if self.operation_running:
+            return
+        selected = self.query_one("#device", Select).value
+        device = self.devices.get(str(selected))
+        if device is None:
+            return
+        try:
+            revalidate_device(device)
+            entries = trash_entries(device.mount_path)
+        except Exception as error:
+            self._show_error(str(error))
+            return
+        if not entries:
+            self.query_one("#status", Static).update(translate("empty_trash_empty", self.language))
+            return
+        self.push_screen(
+            ConfirmEmptyTrash(entries, self.language),
+            partial(self._confirm_empty_trash, device, entries),
+        )
+
+    def _confirm_empty_trash(
+        self, device: Device, entries: tuple[Path, ...], confirmed: bool | None
+    ) -> None:
+        if confirmed:
+            self._set_running(True, translate("emptying_trash", self.language))
+            self._empty_trash(device, entries)
+
+    @work(thread=True, exclusive=True, group="transfer")
+    def _empty_trash(self, device: Device, entries: tuple[Path, ...]) -> None:
+        try:
+            removed = empty_trash(device, entries)
+        except Exception as error:
+            self.call_from_thread(self._show_error, str(error))
+        else:
+            self.call_from_thread(self._trash_emptied, len(removed))
+
+    def _trash_emptied(self, count: int) -> None:
+        self._set_running(False, "")
+        self.query_one("#status", Static).update(
+            f"[green]{translate('trash_emptied', self.language).format(count=count)}[/green]"
+        )
+
     @work(thread=True, exclusive=True, group="transfer")
     def _perform_updates(self, plan: UpdatePlan, items: tuple[PlanItem, ...]) -> None:
         self.call_from_thread(self._set_running, True, translate("updating", self.language))
@@ -1065,6 +1152,7 @@ class VentoyDepotApp(App[None]):
             "replace",
             "update",
             "retry",
+            "empty-trash",
             "settings",
         ):
             self.query_one(f"#{button_id}", Button).disabled = (
@@ -1083,6 +1171,10 @@ class VentoyDepotApp(App[None]):
                 )
                 or (button_id == "update" and not self.selected_paths)
                 or (button_id == "retry" and not self.failed_paths)
+                or (
+                    button_id == "empty-trash"
+                    and self.devices.get(str(self.query_one("#device", Select).value)) is None
+                )
             )
         self.query_one("#cancel-run", Button).disabled = not self.transfer_running
         self.query_one("#device", Select).disabled = running

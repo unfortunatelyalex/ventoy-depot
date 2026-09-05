@@ -10,6 +10,7 @@ from ventoy_depot.app import (
     _ASSIGNMENT_PROFILES,
     AddIsoDialog,
     AssignIdentity,
+    ConfirmEmptyTrash,
     SettingsDialog,
     VentoyDepotApp,
     _write_report,
@@ -65,6 +66,7 @@ def test_tui_mounts_without_stylesheet_errors(monkeypatch) -> None:
             assert app.query_one("#cancel-run").disabled
             assert app.query_one("#retry").disabled
             assert app.query_one("#verify").disabled
+            assert app.query_one("#empty-trash").disabled
 
     asyncio.run(exercise())
 
@@ -94,6 +96,33 @@ def test_refresh_clears_a_selection_that_is_no_longer_available(monkeypatch) -> 
             assert app.query_one("#scan").disabled
             assert app.query_one("#device-card", Static).content == ""
             assert not app.devices
+
+    asyncio.run(exercise())
+
+
+def test_empty_trash_dialog_cancellation_preserves_files(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    trash = tmp_path / ".ventoy-depot" / "trash"
+    trash.mkdir(parents=True)
+    old = trash / "old.iso"
+    old.write_bytes(b"old")
+    device = Device("usb", "Ventoy", tmp_path, 100, 50, True, True, "marker")
+    monkeypatch.setattr("ventoy_depot.app.discover_ventoy_devices", lambda: [device])
+    monkeypatch.setattr("ventoy_depot.app.revalidate_device", lambda _device: None)
+    monkeypatch.setattr("ventoy_depot.transfer.revalidate_device", lambda _device: None)
+
+    async def exercise() -> None:
+        app = VentoyDepotApp()
+        async with app.run_test() as pilot:
+            app.query_one("#device").value = device.identifier
+            await pilot.pause()
+            app.action_empty_trash()
+            await pilot.pause()
+            assert isinstance(app.screen, ConfirmEmptyTrash)
+            await pilot.click("#trash-cancel")
+            await pilot.pause()
+            assert old.exists()
 
     asyncio.run(exercise())
 

@@ -351,6 +351,48 @@ def _trash(path: Path, root: Path) -> Path:
     return candidate
 
 
+def trash_entries(root: Path) -> tuple[Path, ...]:
+    """Return deletable trash files without creating metadata directories."""
+    resolved_root = root.resolve(strict=True)
+    metadata = resolved_root / ".ventoy-depot"
+    trash = metadata / "trash"
+    for directory in (metadata, trash):
+        if directory.is_symlink():
+            raise SecurityError("Symlinked trash directories are not allowed.")
+        if not directory.exists():
+            return ()
+        if not directory.is_dir():
+            raise SecurityError("Ventoy Depot trash path is not a directory.")
+        _within(resolved_root, directory)
+    entries: list[Path] = []
+    for entry in sorted(trash.iterdir(), key=lambda item: item.name.casefold()):
+        if entry.is_symlink():
+            raise SecurityError("Symlinked trash entries are not allowed.")
+        details = entry.stat(follow_symlinks=False)
+        if not stat.S_ISREG(details.st_mode):
+            raise SecurityError("Ventoy Depot trash contains a non-file entry.")
+        _within(resolved_root, entry)
+        entries.append(entry)
+    return tuple(entries)
+
+
+def empty_trash(device: Device, expected: tuple[Path, ...] | None = None) -> tuple[Path, ...]:
+    """Permanently remove only files already inside this revalidated device's trash."""
+    revalidate_device(device)
+    current = trash_entries(device.mount_path)
+    entries = current if expected is None else expected
+    if any(entry not in current for entry in entries):
+        raise TransferError("The confirmed trash contents changed before deletion.")
+    signatures = {entry: _file_signature(entry) for entry in entries}
+    for entry in entries:
+        revalidate_device(device)
+        _within(device.mount_path, entry)
+        _require_unchanged(entry, signatures[entry])
+        entry.unlink()
+        _fsync_directory(entry.parent)
+    return entries
+
+
 def _file_signature(path: Path) -> tuple[int, int, int, int]:
     details = path.stat(follow_symlinks=False)
     if not stat.S_ISREG(details.st_mode):

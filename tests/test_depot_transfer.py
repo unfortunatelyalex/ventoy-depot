@@ -24,6 +24,8 @@ from ventoy_depot.transfer import (
     _trash,
     _verify_openpgp,
     apply_item,
+    empty_trash,
+    trash_entries,
 )
 
 
@@ -433,3 +435,70 @@ def test_trash_rejects_symlinked_metadata_directory(tmp_path: Path) -> None:
 
     assert iso.exists()
     assert not (outside / "trash" / iso.name).exists()
+
+
+def test_empty_trash_removes_only_inventory_after_device_revalidation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    trash = tmp_path / ".ventoy-depot" / "trash"
+    trash.mkdir(parents=True)
+    first = trash / "old.iso"
+    second = trash / "old.1.iso"
+    first.write_bytes(b"one")
+    second.write_bytes(b"two")
+    outside = tmp_path / "keep.iso"
+    outside.write_bytes(b"keep")
+    checks: list[str] = []
+    monkeypatch.setattr(
+        "ventoy_depot.transfer.revalidate_device",
+        lambda device: checks.append(device.identifier),
+    )
+    device = Device("usb", "Ventoy", tmp_path, 100, 50, True, True)
+
+    removed = empty_trash(device)
+
+    assert removed == (second, first)
+    assert not first.exists()
+    assert not second.exists()
+    assert outside.read_bytes() == b"keep"
+    assert len(checks) == 3
+
+
+def test_trash_inventory_rejects_symlinked_entries(tmp_path: Path) -> None:
+    trash = tmp_path / ".ventoy-depot" / "trash"
+    trash.mkdir(parents=True)
+    outside = tmp_path / "outside.iso"
+    outside.write_bytes(b"keep")
+    (trash / "old.iso").symlink_to(outside)
+
+    with pytest.raises(Exception, match="Symlinked trash entries"):
+        trash_entries(tmp_path)
+
+    assert outside.read_bytes() == b"keep"
+
+
+def test_trash_inventory_rejects_subdirectories(tmp_path: Path) -> None:
+    nested = tmp_path / ".ventoy-depot" / "trash" / "nested"
+    nested.mkdir(parents=True)
+
+    with pytest.raises(Exception, match="non-file"):
+        trash_entries(tmp_path)
+
+
+def test_empty_trash_does_not_delete_entries_added_after_confirmation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    trash = tmp_path / ".ventoy-depot" / "trash"
+    trash.mkdir(parents=True)
+    confirmed = trash / "confirmed.iso"
+    confirmed.write_bytes(b"confirmed")
+    expected = trash_entries(tmp_path)
+    later = trash / "later.iso"
+    later.write_bytes(b"later")
+    monkeypatch.setattr("ventoy_depot.transfer.revalidate_device", lambda _device: None)
+    device = Device("usb", "Ventoy", tmp_path, 100, 50, True, True)
+
+    empty_trash(device, expected)
+
+    assert not confirmed.exists()
+    assert later.read_bytes() == b"later"
