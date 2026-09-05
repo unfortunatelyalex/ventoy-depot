@@ -17,9 +17,11 @@ class DeviceError(RuntimeError):
 def is_ventoy_root(path: Path, label: str = "") -> tuple[bool, str]:
     if label.strip().casefold() == "ventoy":
         return True, "volume-label"
-    if (path / "ventoy").is_dir():
+    directory_marker = path / "ventoy"
+    file_marker = path / ".ventoy"
+    if not directory_marker.is_symlink() and directory_marker.is_dir():
         return True, "ventoy-directory"
-    if (path / ".ventoy").exists():
+    if not file_marker.is_symlink() and file_marker.exists():
         return True, "ventoy-marker"
     return False, ""
 

@@ -6,6 +6,15 @@ _MESSAGES = {
         "choose_device": "Choose a detected Ventoy drive.",
         "no_devices": "No mounted Ventoy drive found.",
         "refresh": "Refresh devices",
+        "manual_mount": "Choose mountpoint",
+        "manual_mount_title": "Choose a Ventoy mountpoint manually",
+        "manual_mount_warning": (
+            "Use this only when automatic device discovery misses an already mounted Ventoy "
+            "volume. The path is accepted only if it contains a Ventoy marker."
+        ),
+        "manual_mount_confirm": "Use Ventoy mountpoint",
+        "manual_mount_required": "Enter an absolute mounted-volume path.",
+        "manual_mount_selected": "Manually confirmed Ventoy mountpoint: {path}",
         "scan": "Scan ISOs",
         "check_updates": "Check updates",
         "update_selected": "Update selected",
@@ -100,6 +109,15 @@ _MESSAGES = {
         "choose_device": "Wähle ein erkanntes Ventoy-Laufwerk.",
         "no_devices": "Kein eingehängtes Ventoy-Laufwerk gefunden.",
         "refresh": "Laufwerke suchen",
+        "manual_mount": "Mountpoint wählen",
+        "manual_mount_title": "Ventoy-Mountpoint manuell wählen",
+        "manual_mount_warning": (
+            "Nur verwenden, wenn die automatische Erkennung ein bereits eingehängtes "
+            "Ventoy-Laufwerk übersieht. Der Pfad wird nur mit Ventoy-Marker akzeptiert."
+        ),
+        "manual_mount_confirm": "Ventoy-Mountpoint verwenden",
+        "manual_mount_required": "Gib einen absoluten Pfad eines eingehängten Laufwerks ein.",
+        "manual_mount_selected": "Manuell bestätigter Ventoy-Mountpoint: {path}",
         "scan": "ISOs prüfen",
         "check_updates": "Updates prüfen",
         "update_selected": "Auswahl aktualisieren",

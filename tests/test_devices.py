@@ -2,7 +2,13 @@ from pathlib import Path
 
 import pytest
 
-from ventoy_depot.devices import DeviceError, _linux_devices, _windows_devices, is_ventoy_root
+from ventoy_depot.devices import (
+    DeviceError,
+    _linux_devices,
+    _windows_devices,
+    is_ventoy_root,
+    manual_device,
+)
 from ventoy_iso_updater.devices import _is_ventoy_root
 
 
@@ -22,6 +28,28 @@ def test_generic_removable_drive_is_not_assumed_to_be_ventoy(tmp_path: Path) -> 
 def test_label_must_be_exactly_ventoy(tmp_path: Path) -> None:
     assert is_ventoy_root(tmp_path, "Ventoy") == (True, "volume-label")
     assert is_ventoy_root(tmp_path, "not-ventoy-backup") == (False, "")
+
+
+def test_manual_device_requires_a_ventoy_filesystem_marker(tmp_path: Path) -> None:
+    with pytest.raises(DeviceError, match="no Ventoy label or marker"):
+        manual_device(tmp_path)
+
+    (tmp_path / "ventoy").mkdir()
+    device = manual_device(tmp_path)
+
+    assert device.mount_path == tmp_path.resolve()
+    assert device.is_ventoy
+    assert device.detection_reason == "ventoy-directory"
+
+
+def test_symlinked_ventoy_markers_are_rejected(tmp_path: Path) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    root = tmp_path / "root"
+    root.mkdir()
+    (root / "ventoy").symlink_to(outside, target_is_directory=True)
+
+    assert is_ventoy_root(root) == (False, "")
 
 
 @pytest.mark.parametrize("payload", [[], "invalid", {"blockdevices": "invalid"}])

@@ -26,7 +26,7 @@ from textual.widgets import (
 
 from .assignments import AssignmentCatalog
 from .config import Settings, cache_path, load_settings, save_settings
-from .devices import DeviceError, discover_ventoy_devices, revalidate_device
+from .devices import DeviceError, discover_ventoy_devices, manual_device, revalidate_device
 from .i18n import translate
 from .iso import verify_detected_iso
 from .models import Device, IsoIdentity, LocalVerification, PlanItem, UpdatePlan
@@ -133,6 +133,56 @@ class ConfirmEmptyTrash(ModalScreen[bool]):
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         self.dismiss(event.button.id == "trash-confirm")
+
+
+class ManualMountDialog(ModalScreen[Path | None]):
+    CSS = """
+    ManualMountDialog { align: center middle; }
+    #manual-dialog {
+        width: 85%; max-width: 90; height: auto;
+        border: thick $warning; background: $surface; padding: 1 2;
+    }
+    #manual-path { margin: 1 0; }
+    #manual-dialog Button { margin-right: 1; }
+    """
+
+    def __init__(self, language: str) -> None:
+        super().__init__()
+        self.language = language
+
+    def compose(self) -> ComposeResult:
+        with Container(id="manual-dialog"):
+            yield Static(
+                f"[bold]{translate('manual_mount_title', self.language)}[/bold]\n"
+                f"{translate('manual_mount_warning', self.language)}"
+            )
+            yield Input(placeholder="/run/media/user/Ventoy", id="manual-path")
+            yield Static("", id="manual-error")
+            with Horizontal():
+                yield Button(
+                    translate("manual_mount_confirm", self.language),
+                    id="manual-confirm",
+                    variant="warning",
+                )
+                yield Button(translate("cancel", self.language), id="manual-cancel")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id != "manual-confirm":
+            self.dismiss(None)
+            return
+        raw = self.query_one("#manual-path", Input).value.strip()
+        if not raw:
+            self.query_one("#manual-error", Static).update(
+                translate("manual_mount_required", self.language)
+            )
+            return
+        path = Path(raw).expanduser()
+        if not path.is_absolute():
+            self.query_one("#manual-error", Static).update(
+                translate("manual_mount_required", self.language)
+            )
+            return
+        self.dismiss(path)
 
 
 _ASSIGNMENT_PROFILES = (
@@ -555,6 +605,7 @@ class VentoyDepotApp(App[None]):
     TITLE = "Ventoy Depot"
     BINDINGS = [
         ("r", "refresh", "Refresh"),
+        ("m", "manual_mount", "Manual mountpoint"),
         ("s", "scan", "Check updates"),
         ("space", "toggle_selection", "Select ISO"),
         ("x", "replace_old", "Replace old ISO"),
@@ -588,6 +639,7 @@ class VentoyDepotApp(App[None]):
             yield Static("", id="device-card")
             with Horizontal(id="actions"):
                 yield Button(translate("refresh", self.language), id="refresh", variant="primary")
+                yield Button(translate("manual_mount", self.language), id="manual-mount")
                 yield Button(translate("check_updates", self.language), id="scan", disabled=True)
                 yield Button(translate("assign_iso", self.language), id="assign", disabled=True)
                 yield Button(translate("add_iso", self.language), id="add", disabled=True)
@@ -652,6 +704,8 @@ class VentoyDepotApp(App[None]):
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "refresh":
             self.action_refresh()
+        elif event.button.id == "manual-mount":
+            self.action_manual_mount()
         elif event.button.id == "scan":
             self.action_scan()
         elif event.button.id == "assign":
@@ -711,6 +765,27 @@ class VentoyDepotApp(App[None]):
         self.push_screen(
             SettingsDialog(self.settings, self.language),
             self._settings_chosen,
+        )
+
+    def action_manual_mount(self) -> None:
+        if not self.operation_running:
+            self.push_screen(ManualMountDialog(self.language), self._manual_mount_chosen)
+
+    def _manual_mount_chosen(self, path: Path | None) -> None:
+        if path is None:
+            return
+        try:
+            device = manual_device(path)
+        except (DeviceError, OSError) as error:
+            self._show_error(str(error))
+            return
+        self.devices[device.identifier] = device
+        self.query_one("#device", Select).set_options(
+            [(item.display_name, item.identifier) for item in self.devices.values()]
+        )
+        self.query_one("#device", Select).value = device.identifier
+        self.query_one("#status", Static).update(
+            translate("manual_mount_selected", self.language).format(path=device.mount_path)
         )
 
     def _settings_chosen(self, settings: Settings | None) -> None:
@@ -1145,6 +1220,7 @@ class VentoyDepotApp(App[None]):
         self.operation_running = running
         for button_id in (
             "refresh",
+            "manual-mount",
             "scan",
             "assign",
             "add",

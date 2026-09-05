@@ -100,6 +100,8 @@ without being falsely reported as verified.
 
 - The app lists only removable, mounted volumes that have a Ventoy label or a Ventoy
   filesystem marker. It does not blindly use `/dev/sdb1`.
+- If automatic discovery misses an already mounted volume, **Choose mountpoint** accepts
+  an explicitly entered absolute path only after finding a real, non-symlinked Ventoy marker.
 - Provider identity includes product, edition, flavor, channel, architecture and
   language; updates may not silently change any of these dimensions.
 - It keeps the existing ISO until a newly downloaded file has passed the publisher's
