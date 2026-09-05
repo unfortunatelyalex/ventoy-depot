@@ -2,8 +2,9 @@
 
 Ventoy Depot is a safe, extensible TUI and read-only CLI for discovering, checking,
 downloading, and managing Linux, BSD, rescue and public installation ISOs on Ventoy
-drives. The application runs on Linux and Windows. Windows 11 media can be recognized
-and locally verified; automatic Microsoft download-link acquisition is not implemented yet.
+drives. The application runs on Linux and Windows. Windows 10/11 and Windows Server
+Evaluation media can be recognized and locally verified; automatic Microsoft download-link
+acquisition is not implemented yet.
 It never writes to a drive merely because it is removable or happens to be `/dev/sdb1`.
 
 > Ventoy Depot is an independent community project. It is not affiliated with,
@@ -50,7 +51,8 @@ Hiren's BootCD PE, Kali Linux, KDE neon,
 netboot.xyz, NixOS, SystemRescue, openSUSE Tumbleweed, FreeBSD, Omarchy, Parrot OS,
 Pop!_OS, PorteuX, Mageia,
 Proxmox, Rescuezilla, Solus, TrueNAS Community Edition, Void Linux, Vanilla OS and the free Zorin OS
-editions and Tails. Qubes OS and Memtest86+ are recognized but remain
+editions and Tails. Windows 10/11, Windows Server Evaluation, Qubes OS and Memtest86+ are
+recognized but remain
 download-disabled until their mirror, signature-chain or archive-extraction requirements
 can be represented safely. A variant without an exact official mapping remains visibly
 skipped; it is never silently converted.

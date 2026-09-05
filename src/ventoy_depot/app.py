@@ -133,6 +133,8 @@ _ASSIGNMENT_PROFILES = (
     ("Nobara", "nobara", "nobara", "x86_64"),
     ("Vanilla OS", "vanilla-os", "vanilla-os", "amd64"),
     ("Windows 11", "windows-11", "windows-11", "x86_64"),
+    ("Windows 10", "windows-10", "windows-10", "x86_64"),
+    ("Windows Server Evaluation", "windows-server", "windows-server", "x86_64"),
     ("Zorin OS", "zorin-os", "zorin-os", "x86_64"),
     ("netboot.xyz", "netboot-xyz", "netboot-xyz", "x86_64"),
     ("Gentoo Linux", "gentoo", "gentoo", "amd64"),

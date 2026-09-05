@@ -93,6 +93,15 @@ from ventoy_depot.providers.base import ProviderError
         ("void-live-aarch64-musl-20250202-xfce.iso", "void-linux", "xfce", "aarch64"),
         ("Mageia-10-x86_64.iso", "mageia", "classic", "x86_64"),
         ("Mageia-10-Live-Xfce-i686.iso", "mageia", "xfce", "i686"),
+        ("Win10_22H2_German_x64v1.iso", "windows-10", "multi-edition", "x86_64"),
+        ("Win10_22H2_English_x32v1.iso", "windows-10", "multi-edition", "x86"),
+        ("SERVER_EVAL_x64FRE_de-de.iso", "windows-server", "evaluation", "x86_64"),
+        (
+            "26100.1742.240906-0331.ge_release_svc_refresh_SERVER_EVAL_x64FRE_en-us.iso",
+            "windows-server",
+            "evaluation",
+            "x86_64",
+        ),
         (
             "CentOS-Stream-10-20260901.0-x86_64-boot.iso",
             "centos-stream",

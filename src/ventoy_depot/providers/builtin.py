@@ -106,6 +106,7 @@ def _architecture(value: str) -> str:
         "64-bit": "x86_64",
         "x64": "x86_64",
         "x86-64": "x86_64",
+        "x32": "x86",
         "all": "amd64",
     }.get(value.lower(), value.lower())
 
@@ -837,6 +838,78 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
             ("de-de", "en-us", "en-gb"),
             ("stable",),
             ("consumer",),
+        ),
+    ),
+    FilenameProvider(
+        "windows-10",
+        "Windows 10",
+        (
+            FilenameRule(
+                re.compile(
+                    r"Win10_(?P<version>\d{2}H\d)_German_"
+                    r"(?P<architecture>x64|x32)(?:v(?P<build>\d+))?\.iso$",
+                    re.I,
+                ),
+                "windows-10",
+                default_edition="multi-edition",
+                default_flavor="consumer",
+                default_language="de-de",
+            ),
+            FilenameRule(
+                re.compile(
+                    r"Win10_(?P<version>\d{2}H\d)_English_"
+                    r"(?P<architecture>x64|x32)(?:v(?P<build>\d+))?\.iso$",
+                    re.I,
+                ),
+                "windows-10",
+                default_edition="multi-edition",
+                default_flavor="consumer",
+                default_language="en-us",
+            ),
+            FilenameRule(
+                re.compile(
+                    r"Win10_(?P<version>\d{2}H\d)_EnglishInternational_"
+                    r"(?P<architecture>x64|x32)(?:v(?P<build>\d+))?\.iso$",
+                    re.I,
+                ),
+                "windows-10",
+                default_edition="multi-edition",
+                default_flavor="consumer",
+                default_language="en-gb",
+            ),
+        ),
+        ProviderCapabilities(
+            ("multi-edition",),
+            ("x86_64", "x86"),
+            ("de-de", "en-us", "en-gb"),
+            ("stable",),
+            ("consumer",),
+        ),
+    ),
+    FilenameProvider(
+        "windows-server",
+        "Windows Server Evaluation",
+        (
+            FilenameRule(
+                re.compile(
+                    r"(?:(?P<build>\d+\.\d+\.\d{6}-\d{4}\.[A-Za-z0-9_-]+)_)?"
+                    r"SERVER_EVAL_x64FRE_(?P<language>en-us|de-de|es-es|fr-fr|it-it|"
+                    r"ja-jp|ru-ru|zh-cn)\.iso$",
+                    re.I,
+                ),
+                "windows-server",
+                default_architecture="x86_64",
+                default_edition="evaluation",
+                default_flavor="standard-datacenter",
+                default_channel="evaluation",
+            ),
+        ),
+        ProviderCapabilities(
+            ("evaluation",),
+            ("x86_64",),
+            ("en-us", "de-de", "es-es", "fr-fr", "it-it", "ja-jp", "ru-ru", "zh-cn"),
+            ("evaluation",),
+            ("standard-datacenter",),
         ),
     ),
     FilenameProvider(
