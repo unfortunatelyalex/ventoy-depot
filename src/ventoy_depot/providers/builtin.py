@@ -113,7 +113,18 @@ def _architecture(value: str) -> str:
 
 def _ubuntu_flavor_rules() -> tuple[FilenameRule, ...]:
     rules: list[FilenameRule] = []
-    for product in ("kubuntu", "lubuntu", "xubuntu", "ubuntu-budgie", "ubuntu-unity"):
+    for product in (
+        "kubuntu",
+        "lubuntu",
+        "xubuntu",
+        "ubuntu-budgie",
+        "ubuntu-unity",
+        "ubuntu-mate",
+        "ubuntucinnamon",
+        "edubuntu",
+        "ubuntustudio",
+        "ubuntukylin",
+    ):
         name = re.escape(product)
         rules.extend(
             (

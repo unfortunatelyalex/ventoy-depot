@@ -326,7 +326,18 @@ def _ubuntu(identity: IsoIdentity) -> ReleaseArtifact:
 
 
 def _ubuntu_flavors(identity: IsoIdentity) -> ReleaseArtifact:
-    products = {"kubuntu", "lubuntu", "xubuntu", "ubuntu-budgie", "ubuntu-unity"}
+    products = {
+        "kubuntu",
+        "lubuntu",
+        "xubuntu",
+        "ubuntu-budgie",
+        "ubuntu-unity",
+        "ubuntu-mate",
+        "ubuntucinnamon",
+        "edubuntu",
+        "ubuntustudio",
+        "ubuntukylin",
+    }
     if (
         identity.product_id not in products
         or identity.edition != "desktop"

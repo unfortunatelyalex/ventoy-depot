@@ -44,7 +44,8 @@ assignment dialog reads the ISO-9660 volume identifier without mounting the imag
 it only to suggest a product; the user still confirms every identity field.
 
 Automatic official resolution currently covers Arch Linux, Ubuntu, Kubuntu, Lubuntu,
-Xubuntu, Ubuntu Budgie, Ubuntu Unity, Debian, Fedora
+Xubuntu, Ubuntu Budgie, Ubuntu Unity, Ubuntu MATE, Ubuntu Cinnamon, Edubuntu,
+Ubuntu Studio, Ubuntu Kylin, Debian, Fedora
 Workstation/Server/KDE, Alpine Linux, Rocky Linux, AlmaLinux, CentOS Stream,
 Linux Mint stable editions,
 EndeavourOS, CachyOS, Clonezilla, Gentoo, GhostBSD, GParted Live, Grml, Haiku,

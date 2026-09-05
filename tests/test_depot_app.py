@@ -45,6 +45,8 @@ def test_assignment_profiles_use_supported_product_and_architecture_defaults() -
     assert profiles["CentOS Stream"] == ["centos-stream", "centos-stream", "x86_64"]
     assert profiles["Kubuntu"] == ["ubuntu-flavors", "kubuntu", "amd64"]
     assert profiles["Ubuntu Unity"] == ["ubuntu-flavors", "ubuntu-unity", "amd64"]
+    assert profiles["Ubuntu MATE"] == ["ubuntu-flavors", "ubuntu-mate", "amd64"]
+    assert profiles["Ubuntu Studio"] == ["ubuntu-flavors", "ubuntustudio", "amd64"]
     assert profiles["Windows 10"] == ["windows-10", "windows-10", "x86_64"]
     assert profiles["Windows Server Evaluation"] == [
         "windows-server",
