@@ -89,6 +89,13 @@ class FilenameProvider(Provider):
             and identity.version.startswith("22.")
         ):
             return True
+        if (
+            self.provider_id == "opensuse-leap"
+            and artifact.version == identity.version
+            and artifact.build
+            and identity.build is None
+        ):
+            return True
         if artifact.version == identity.version and artifact.build and identity.build:
             from ..models import is_newer_version
 
@@ -573,6 +580,47 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
         ProviderCapabilities(("live",), ("amd64",), (), ("stable",)),
     ),
     FilenameProvider(
+        "finnix",
+        "Finnix",
+        (
+            FilenameRule(
+                re.compile(r"finnix-(?P<version>\d+(?:\.\d+)?)\.iso$", re.I),
+                "finnix",
+                default_edition="live",
+                default_architecture="amd64",
+            ),
+        ),
+        ProviderCapabilities(("live",), ("amd64",), (), ("stable",)),
+    ),
+    FilenameProvider(
+        "alt-rescue",
+        "ALT Rescue",
+        (
+            FilenameRule(
+                re.compile(
+                    r"alt-(?P<channel>p10)-(?P<edition>rescue)-"
+                    r"(?P<version>\d{8})-(?P<architecture>i586|x86_64)\.iso$",
+                    re.I,
+                ),
+                "alt-rescue",
+            ),
+            FilenameRule(
+                re.compile(
+                    r"alt-(?P<channel>p11)-(?P<edition>rescue|rescue-live)-"
+                    r"(?P<version>\d{8})-(?P<architecture>x86_64)\.iso$",
+                    re.I,
+                ),
+                "alt-rescue",
+            ),
+        ),
+        ProviderCapabilities(
+            ("rescue", "rescue-live"),
+            ("i586", "x86_64"),
+            (),
+            ("p10", "p11"),
+        ),
+    ),
+    FilenameProvider(
         "kali-linux",
         "Kali Linux",
         (
@@ -660,6 +708,46 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
             ("x86_64", "aarch64"),
             (),
             ("rolling",),
+        ),
+    ),
+    FilenameProvider(
+        "opensuse-leap",
+        "openSUSE Leap",
+        (
+            FilenameRule(
+                re.compile(
+                    r"openSUSE-Leap-(?P<version>15\.6)-(?P<edition>DVD|NET)-"
+                    r"(?P<architecture>x86_64|aarch64|ppc64le|s390x)-Media\.iso$",
+                    re.I,
+                ),
+                "opensuse-leap",
+                default_channel="15.6",
+            ),
+            FilenameRule(
+                re.compile(
+                    r"Leap-(?P<version>16\.0)-(?P<edition>offline|online)-installer-"
+                    r"(?P<architecture>x86_64|aarch64|ppc64le|s390x)-"
+                    r"Build(?P<build>\d+(?:\.\d+)+)\.install\.iso$",
+                    re.I,
+                ),
+                "opensuse-leap",
+                default_channel="16.0",
+            ),
+            FilenameRule(
+                re.compile(
+                    r"Leap-(?P<version>16\.0)-(?P<edition>offline|online)-installer-"
+                    r"(?P<architecture>x86_64|aarch64|ppc64le|s390x)\.install\.iso$",
+                    re.I,
+                ),
+                "opensuse-leap",
+                default_channel="16.0",
+            ),
+        ),
+        ProviderCapabilities(
+            ("dvd", "net", "offline", "online"),
+            ("x86_64", "aarch64", "ppc64le", "s390x"),
+            (),
+            ("15.6", "16.0"),
         ),
     ),
     FilenameProvider(

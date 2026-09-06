@@ -123,6 +123,179 @@ def test_gparted_resolver_uses_official_sha256_list(monkeypatch) -> None:
     assert artifact.download_url.startswith("https://downloads.sourceforge.net/project/gparted/")
 
 
+def test_finnix_resolver_binds_homepage_release_to_official_sha512_json(
+    monkeypatch,
+) -> None:
+    digest = "d" * 128
+    page = '<a href="https://www.finnix.org/releases/251/finnix-251.iso">Download</a>'
+    payload = {
+        "finnix": {
+            "releases": {
+                "251": {
+                    "architectures": {
+                        "amd64": {
+                            "files": {
+                                "finnix-251.iso": {
+                                    "checksums": {"sha512": digest},
+                                    "size": 605028352,
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, url: str) -> bytes:
+            if url == "https://www.finnix.org/":
+                return page.encode()
+            assert url.endswith("/releases/251.json")
+            return json.dumps(payload).encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity("finnix", "finnix", "live", None, "stable", "amd64", None, "250", None)
+
+    artifact = resolvers.resolve_release("finnix", installed)
+
+    assert artifact.version == "251"
+    assert artifact.filename == "finnix-251.iso"
+    assert artifact.download_url == "https://www.finnix.org/releases/251/finnix-251.iso"
+    assert artifact.size_bytes == 605028352
+    assert artifact.checksum_algorithm == "sha512"
+    assert artifact.checksum == digest
+
+
+def test_alt_rescue_resolver_preserves_platform_and_live_variant(monkeypatch) -> None:
+    filename = "alt-p11-rescue-live-20260612-x86_64.iso"
+    digest = "a" * 128
+    base = "https://nightly.altlinux.org/p11/release/"
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, url: str) -> bytes:
+            assert url == base + "SHA512SUM"
+            return f"{digest}  {filename}\n".encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "alt-rescue",
+        "alt-rescue",
+        "rescue-live",
+        None,
+        "p11",
+        "x86_64",
+        None,
+        "20250101",
+        None,
+    )
+
+    artifact = resolvers.resolve_release("alt-rescue", installed)
+
+    assert artifact.filename == filename
+    assert artifact.version == "20260612"
+    assert artifact.download_url == base + filename
+    assert artifact.checksum_algorithm == "sha512"
+    assert artifact.checksum == digest
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()
+
+
+@pytest.mark.parametrize(
+    ("edition", "architecture", "filename"),
+    [
+        (
+            "offline",
+            "x86_64",
+            "Leap-16.0-offline-installer-x86_64-Build178.27.install.iso",
+        ),
+        (
+            "online",
+            "aarch64",
+            "Leap-16.0-online-installer-aarch64-Build178.27.install.iso",
+        ),
+    ],
+)
+def test_opensuse_leap_16_resolver_preserves_installer_and_architecture(
+    monkeypatch, edition: str, architecture: str, filename: str
+) -> None:
+    digest = "e" * 128
+    base = "https://download.opensuse.org/distribution/leap/16.0/offline/"
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, url: str) -> bytes:
+            if url == base:
+                return filename.encode()
+            assert url == base + filename + ".sha512"
+            return f"{digest}  {filename}\n".encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "opensuse-leap",
+        "opensuse-leap",
+        edition,
+        None,
+        "16.0",
+        architecture,
+        None,
+        "16.0",
+        "177.1",
+    )
+
+    artifact = resolvers.resolve_release("opensuse-leap", installed)
+
+    assert artifact.filename == filename
+    assert artifact.build == "178.27"
+    assert artifact.checksum_algorithm == "sha512"
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()
+
+
+def test_opensuse_leap_15_resolver_uses_matching_sha256_sidecar(monkeypatch) -> None:
+    filename = "openSUSE-Leap-15.6-NET-s390x-Media.iso"
+    digest = "f" * 64
+    base = "https://download.opensuse.org/distribution/leap/15.6/iso/"
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, url: str) -> bytes:
+            if url == base:
+                return filename.encode()
+            assert url == base + filename + ".sha256"
+            return f"{digest}  {filename}\n".encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "opensuse-leap",
+        "opensuse-leap",
+        "net",
+        None,
+        "15.6",
+        "s390x",
+        None,
+        "15.6",
+        None,
+    )
+
+    artifact = resolvers.resolve_release("opensuse-leap", installed)
+
+    assert artifact.filename == filename
+    assert artifact.checksum == digest
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()
+
+
 def test_netboot_xyz_resolver_uses_github_asset_digest(monkeypatch) -> None:
     digest = "5" * 64
     payload = {

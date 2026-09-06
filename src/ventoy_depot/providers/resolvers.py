@@ -25,10 +25,13 @@ BUILTIN_RESOLVER_IDS = frozenset(
         "cachyos",
         "clonezilla",
         "gparted-live",
+        "finnix",
+        "alt-rescue",
         "kali-linux",
         "nixos",
         "systemrescue",
         "opensuse-tumbleweed",
+        "opensuse-leap",
         "freebsd",
         "omarchy",
         "manjaro",
@@ -73,10 +76,13 @@ def resolve_release(provider_id: str, identity: IsoIdentity) -> ReleaseArtifact:
         "cachyos": _cachyos,
         "clonezilla": _clonezilla,
         "gparted-live": _gparted_live,
+        "finnix": _finnix,
+        "alt-rescue": _alt_rescue,
         "kali-linux": _kali_linux,
         "nixos": _nixos,
         "systemrescue": _systemrescue,
         "opensuse-tumbleweed": _opensuse_tumbleweed,
+        "opensuse-leap": _opensuse_leap,
         "freebsd": _freebsd,
         "omarchy": _omarchy,
         "manjaro": _manjaro,
@@ -599,6 +605,93 @@ def _gparted_live(identity: IsoIdentity) -> ReleaseArtifact:
     )
 
 
+def _finnix(identity: IsoIdentity) -> ReleaseArtifact:
+    if (
+        identity.product_id != "finnix"
+        or identity.edition != "live"
+        or identity.architecture != "amd64"
+        or identity.channel != "stable"
+        or identity.flavor
+        or identity.language
+    ):
+        raise ProviderError("Finnix automatic updates support the stable amd64 ISO only.")
+    hosts = {"www.finnix.org", "forge.colobox.com"}
+    client = SafeHttpClient(frozenset(hosts))
+    page = _text(client, "https://www.finnix.org/")
+    matches = list(
+        re.finditer(
+            r"https://www\.finnix\.org/releases/(?P<version>\d+(?:\.\d+)?)/"
+            r"(?P<filename>finnix-(?P=version)\.iso)",
+            page,
+            re.IGNORECASE,
+        )
+    )
+    if not matches:
+        raise ProviderError("The official Finnix page contains no stable ISO.")
+    selected = max(matches, key=lambda item: _version_key(item.group("version")))
+    version = selected.group("version")
+    filename = selected.group("filename")
+    release_url = (
+        f"https://forge.colobox.com/finnix/finnix-docs/raw/branch/main/releases/{version}.json"
+    )
+    payload = json.loads(_text(client, release_url))
+    try:
+        file_data = payload["finnix"]["releases"][version]["architectures"]["amd64"]["files"][
+            filename
+        ]
+        checksums = file_data["checksums"]
+        checksum = checksums["sha512"]
+        size = file_data["size"]
+    except (KeyError, TypeError) as error:
+        raise ProviderError("The official Finnix release data lacks the selected ISO.") from error
+    if not isinstance(checksum, str) or not re.fullmatch(r"[A-Fa-f0-9]{128}", checksum):
+        raise ProviderError("The official Finnix release data lacks a valid SHA-512 digest.")
+    if not isinstance(size, int) or size <= 0:
+        raise ProviderError("The official Finnix release data lacks a valid ISO size.")
+    url = f"https://www.finnix.org/releases/{version}/{filename}"
+    return _artifact(
+        identity,
+        version,
+        filename,
+        url,
+        "sha512",
+        checksum.lower(),
+        hosts,
+        size_bytes=size,
+    )
+
+
+def _alt_rescue(identity: IsoIdentity) -> ReleaseArtifact:
+    if identity.product_id != "alt-rescue" or identity.channel not in {"p10", "p11"}:
+        raise ProviderError("This ALT Rescue product or platform channel is unsupported.")
+    valid_variants = {
+        ("p10", "rescue", "i586"),
+        ("p10", "rescue", "x86_64"),
+        ("p11", "rescue", "x86_64"),
+        ("p11", "rescue-live", "x86_64"),
+    }
+    if (identity.channel, identity.edition, identity.architecture) not in valid_variants:
+        raise ProviderError("This ALT Rescue edition and architecture combination is unavailable.")
+    if identity.flavor or identity.language:
+        raise ProviderError("ALT Rescue does not publish flavor or language-specific ISOs.")
+    host = "nightly.altlinux.org"
+    base = f"https://{host}/{identity.channel}/release/"
+    client = SafeHttpClient(frozenset({host}))
+    sums = _text(client, base + "SHA512SUM")
+    expression = re.compile(
+        rf"\b(alt-{re.escape(identity.channel)}-{re.escape(identity.edition or '')}-"
+        rf"(?P<version>\d{{8}})-{re.escape(identity.architecture)}\.iso)\b",
+        re.IGNORECASE,
+    )
+    matches = list(expression.finditer(sums))
+    if not matches:
+        raise ProviderError("The official ALT checksum list lacks this Rescue ISO variant.")
+    match = max(matches, key=lambda item: item.group("version"))
+    filename, version = match.group(1), match.group("version")
+    checksum = _checksum(sums, filename, "sha512")
+    return _artifact(identity, version, filename, base + filename, "sha512", checksum, {host})
+
+
 def _kali_linux(identity: IsoIdentity) -> ReleaseArtifact:
     editions = {"installer", "installer-netinst", "installer-purple", "live", "live-everything"}
     if identity.edition not in editions or identity.architecture not in {"amd64", "arm64"}:
@@ -721,6 +814,58 @@ def _opensuse_tumbleweed(identity: IsoIdentity) -> ReleaseArtifact:
     filename, version = match.group(1), match.group("version")
     checksum = _checksum(_text(client, base + filename + ".sha256"), filename, "sha256")
     return _artifact(identity, version, filename, base + filename, "sha256", checksum, {host})
+
+
+def _opensuse_leap(identity: IsoIdentity) -> ReleaseArtifact:
+    host = "download.opensuse.org"
+    client = SafeHttpClient(frozenset({host}))
+    if identity.channel == "15.6":
+        if identity.edition not in {"dvd", "net"} or identity.architecture not in {
+            "x86_64",
+            "aarch64",
+            "ppc64le",
+            "s390x",
+        }:
+            raise ProviderError("This openSUSE Leap 15.6 medium or architecture is unsupported.")
+        base = f"https://{host}/distribution/leap/15.6/iso/"
+        label = identity.edition.upper()
+        filename = f"openSUSE-Leap-15.6-{label}-{identity.architecture}-Media.iso"
+        listing = _text(client, base)
+        if not re.search(rf"\b{re.escape(filename)}\b", listing, re.IGNORECASE):
+            raise ProviderError("The openSUSE Leap 15.6 directory lacks this ISO variant.")
+        checksum = _checksum(_text(client, base + filename + ".sha256"), filename, "sha256")
+        return _artifact(identity, "15.6", filename, base + filename, "sha256", checksum, {host})
+    if identity.channel != "16.0" or identity.edition not in {"offline", "online"}:
+        raise ProviderError("This openSUSE Leap channel or installer type is unsupported.")
+    supported = {
+        "offline": {"x86_64"},
+        "online": {"x86_64", "aarch64", "ppc64le", "s390x"},
+    }
+    if identity.architecture not in supported[identity.edition]:
+        raise ProviderError("This openSUSE Leap 16.0 installer architecture is unavailable.")
+    base = f"https://{host}/distribution/leap/16.0/offline/"
+    expression = re.compile(
+        rf"\b(Leap-16\.0-{re.escape(identity.edition)}-installer-"
+        rf"{re.escape(identity.architecture)}-Build(?P<build>\d+(?:\.\d+)+)"
+        rf"\.install\.iso)\b",
+        re.IGNORECASE,
+    )
+    matches = list(expression.finditer(_text(client, base)))
+    if not matches:
+        raise ProviderError("The openSUSE Leap 16.0 directory lacks this ISO variant.")
+    match = max(matches, key=lambda item: _version_key(item.group("build")))
+    filename, build = match.group(1), match.group("build")
+    checksum = _checksum(_text(client, base + filename + ".sha512"), filename, "sha512")
+    return _artifact(
+        identity,
+        "16.0",
+        filename,
+        base + filename,
+        "sha512",
+        checksum,
+        {host},
+        build=build,
+    )
 
 
 def _freebsd(identity: IsoIdentity) -> ReleaseArtifact:
