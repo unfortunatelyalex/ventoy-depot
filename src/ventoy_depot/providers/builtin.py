@@ -621,6 +621,22 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
         ),
     ),
     FilenameProvider(
+        "urbackup-restore",
+        "UrBackup Restore Stick",
+        (
+            FilenameRule(
+                re.compile(
+                    r"urbackup_restore_(?P<version>\d+(?:\.\d+)+)\.iso$",
+                    re.I,
+                ),
+                "urbackup-restore",
+                default_edition="restore",
+                default_architecture="x86_64",
+            ),
+        ),
+        ProviderCapabilities(("restore",), ("x86_64",), (), ("stable",)),
+    ),
+    FilenameProvider(
         "kali-linux",
         "Kali Linux",
         (

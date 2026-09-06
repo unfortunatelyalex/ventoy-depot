@@ -45,6 +45,11 @@ def test_assignment_profiles_use_supported_product_and_architecture_defaults() -
     assert profiles["CentOS Stream"] == ["centos-stream", "centos-stream", "x86_64"]
     assert profiles["Finnix"] == ["finnix", "finnix", "amd64"]
     assert profiles["ALT Rescue"] == ["alt-rescue", "alt-rescue", "x86_64"]
+    assert profiles["UrBackup Restore Stick"] == [
+        "urbackup-restore",
+        "urbackup-restore",
+        "x86_64",
+    ]
     assert profiles["openSUSE Leap"] == ["opensuse-leap", "opensuse-leap", "x86_64"]
     assert profiles["Kubuntu"] == ["ubuntu-flavors", "kubuntu", "amd64"]
     assert profiles["Ubuntu Unity"] == ["ubuntu-flavors", "ubuntu-unity", "amd64"]

@@ -45,6 +45,12 @@ from ventoy_depot.providers.base import ProviderError
             "rescue-live",
             "x86_64",
         ),
+        (
+            "urbackup_restore_2.6.0.iso",
+            "urbackup-restore",
+            "restore",
+            "x86_64",
+        ),
         ("proxmox-ve_9.2-1.iso", "proxmox", "installer", "amd64"),
         ("proxmox-ve_9.2-1-arm64.iso", "proxmox", "installer", "arm64"),
         ("rescuezilla-2.6.2-64bit.resolute.iso", "rescuezilla", "live", "amd64"),

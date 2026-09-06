@@ -207,6 +207,53 @@ def test_alt_rescue_resolver_preserves_platform_and_live_variant(monkeypatch) ->
     assert artifact.identity.variant_key() == installed.variant_key()
 
 
+def test_urbackup_restore_uses_official_github_asset_digest(monkeypatch) -> None:
+    digest = "b" * 64
+    payload = {
+        "assets": [
+            {
+                "name": "urbackup_restore_2.6.0.iso",
+                "browser_download_url": (
+                    "https://github.com/uroni/urbackup_restore_cd/releases/download/"
+                    "2026-01-11_22-27-35/urbackup_restore_2.6.0.iso"
+                ),
+                "digest": f"sha256:{digest}",
+                "size": 1063256064,
+            }
+        ]
+    }
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, url: str) -> bytes:
+            assert url == "https://api.github.com/repos/uroni/urbackup_restore_cd/releases/latest"
+            return json.dumps(payload).encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "urbackup-restore",
+        "urbackup-restore",
+        "restore",
+        None,
+        "stable",
+        "x86_64",
+        None,
+        "2.5.1",
+        None,
+    )
+
+    artifact = resolvers.resolve_release("urbackup-restore", installed)
+
+    assert artifact.version == "2.6.0"
+    assert artifact.filename == "urbackup_restore_2.6.0.iso"
+    assert artifact.size_bytes == 1063256064
+    assert artifact.checksum == digest
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()
+
+
 @pytest.mark.parametrize(
     ("edition", "architecture", "filename"),
     [

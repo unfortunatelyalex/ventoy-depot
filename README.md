@@ -50,7 +50,8 @@ Workstation/Server/KDE, Alpine Linux, Rocky Linux, AlmaLinux, CentOS Stream,
 Linux Mint stable editions,
 EndeavourOS, CachyOS, Clonezilla, Gentoo, GhostBSD, GParted Live, Grml, Haiku,
 Hiren's BootCD PE, Kali Linux, KDE neon,
-netboot.xyz, NixOS, SystemRescue, openSUSE Tumbleweed, FreeBSD, Omarchy, Parrot OS,
+netboot.xyz, NixOS, SystemRescue, ALT Rescue, Finnix, UrBackup Restore Stick,
+openSUSE Leap, openSUSE Tumbleweed, FreeBSD, Omarchy, Parrot OS,
 Pop!_OS, PorteuX, Mageia,
 Proxmox, Rescuezilla, Solus, TrueNAS Community Edition, Void Linux, Vanilla OS and the free Zorin OS
 editions and Tails. Windows 10/11, Windows Server Evaluation, Qubes OS and Memtest86+ are

@@ -27,6 +27,7 @@ BUILTIN_RESOLVER_IDS = frozenset(
         "gparted-live",
         "finnix",
         "alt-rescue",
+        "urbackup-restore",
         "kali-linux",
         "nixos",
         "systemrescue",
@@ -78,6 +79,7 @@ def resolve_release(provider_id: str, identity: IsoIdentity) -> ReleaseArtifact:
         "gparted-live": _gparted_live,
         "finnix": _finnix,
         "alt-rescue": _alt_rescue,
+        "urbackup-restore": _urbackup_restore,
         "kali-linux": _kali_linux,
         "nixos": _nixos,
         "systemrescue": _systemrescue,
@@ -690,6 +692,63 @@ def _alt_rescue(identity: IsoIdentity) -> ReleaseArtifact:
     filename, version = match.group(1), match.group("version")
     checksum = _checksum(sums, filename, "sha512")
     return _artifact(identity, version, filename, base + filename, "sha512", checksum, {host})
+
+
+def _urbackup_restore(identity: IsoIdentity) -> ReleaseArtifact:
+    if (
+        identity.product_id != "urbackup-restore"
+        or identity.edition != "restore"
+        or identity.architecture != "x86_64"
+        or identity.channel != "stable"
+        or identity.flavor
+        or identity.language
+    ):
+        raise ProviderError("UrBackup automatic updates support the stable x64 restore ISO only.")
+    hosts = {
+        "api.github.com",
+        "github.com",
+        "release-assets.githubusercontent.com",
+        "objects.githubusercontent.com",
+    }
+    client = SafeHttpClient(frozenset(hosts))
+    payload = json.loads(
+        _text(client, "https://api.github.com/repos/uroni/urbackup_restore_cd/releases/latest")
+    )
+    assets = payload.get("assets", [])
+    if not isinstance(assets, list):
+        raise ProviderError("The official UrBackup release has no asset list.")
+    candidates: list[tuple[str, dict[str, object]]] = []
+    for asset in assets:
+        if not isinstance(asset, dict):
+            continue
+        name = asset.get("name")
+        if isinstance(name, str) and (
+            match := re.fullmatch(r"urbackup_restore_(\d+(?:\.\d+)+)\.iso", name, re.I)
+        ):
+            candidates.append((match.group(1), asset))
+    if not candidates:
+        raise ProviderError("The official UrBackup release contains no x64 restore ISO.")
+    version, selected = max(candidates, key=lambda item: _version_key(item[0]))
+    filename = str(selected["name"])
+    url = selected.get("browser_download_url")
+    digest = selected.get("digest")
+    size = selected.get("size")
+    if not isinstance(url, str) or not url.endswith("/" + filename):
+        raise ProviderError("The UrBackup release URL is not bound to its ISO filename.")
+    if not isinstance(digest, str) or not re.fullmatch(r"sha256:[A-Fa-f0-9]{64}", digest):
+        raise ProviderError("The official UrBackup release lacks a SHA-256 asset digest.")
+    if not isinstance(size, int) or size <= 0:
+        raise ProviderError("The official UrBackup release lacks a valid ISO size.")
+    return _artifact(
+        identity,
+        version,
+        filename,
+        url,
+        "sha256",
+        digest.removeprefix("sha256:").lower(),
+        hosts,
+        size_bytes=size,
+    )
 
 
 def _kali_linux(identity: IsoIdentity) -> ReleaseArtifact:
