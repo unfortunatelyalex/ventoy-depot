@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import shutil
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import replace
+from pathlib import Path
+from urllib.parse import unquote, urlsplit
 
 from .assignments import AssignmentCatalog, AssignmentError
 from .config import load_settings
@@ -20,7 +23,19 @@ from .models import (
     VerificationLevel,
 )
 from .providers import Provider, provider_map
-from .security import safe_filename
+from .security import safe_filename, validate_https_url
+
+_MICROSOFT_DOWNLOAD_HOSTS = {
+    "windows-10": frozenset(
+        {"software.download.prss.microsoft.com", "software-static.download.prss.microsoft.com"}
+    ),
+    "windows-11": frozenset(
+        {"software.download.prss.microsoft.com", "software-static.download.prss.microsoft.com"}
+    ),
+    "windows-server": frozenset(
+        {"software-download.microsoft.com", "download.microsoft.com", "go.microsoft.com"}
+    ),
+}
 
 
 def build_plan(
@@ -178,6 +193,75 @@ def build_add_plan(device: Device, identity: IsoIdentity, refresh: bool = False)
         tuple(errors),
     )
     return _make_plan(device, (item,))
+
+
+def build_official_link_plan(
+    device: Device,
+    local: DetectedIso,
+    download_url: str,
+    checksum: str,
+) -> UpdatePlan:
+    """Build a write-confirmable plan from a user-supplied official Microsoft URL."""
+    identity = local.identity
+    if identity is None or identity.provider_id not in _MICROSOFT_DOWNLOAD_HOSTS:
+        raise ValueError("Official link handoff is available only for recognized Windows media.")
+    normalized_checksum = checksum.strip().lower()
+    if not re.fullmatch(r"[a-f0-9]{64}", normalized_checksum):
+        raise ValueError("Enter the complete official SHA-256 checksum (64 hexadecimal digits).")
+    hosts = _MICROSOFT_DOWNLOAD_HOSTS[identity.provider_id]
+    validate_https_url(download_url, hosts)
+    filename = safe_filename(unquote(Path(urlsplit(download_url).path).name))
+    providers = provider_map()
+    provider = providers.get(identity.provider_id)
+    if provider is None:
+        raise ValueError(f"Unknown provider: {identity.provider_id}")
+    detected_target = provider.detect(Path(filename))
+    if detected_target is None or detected_target.identity is None:
+        raise ValueError("The official link filename is not recognized as matching Windows media.")
+    provider.validate_binding(identity, detected_target.identity)
+    target_identity = detected_target.identity
+    version = target_identity.version or target_identity.build or identity.version or "evaluation"
+    target = ReleaseArtifact(
+        version,
+        target_identity.build,
+        filename,
+        download_url,
+        None,
+        "sha256",
+        normalized_checksum,
+        None,
+        (),
+        hosts,
+        target_identity,
+    )
+    destination = local.path.parent / filename
+    warnings = ("Official Microsoft link and SHA-256 were supplied by the user.",)
+    errors: list[str] = []
+    same_file = destination.exists() and destination.resolve() == local.path.resolve()
+    newer = provider.is_newer(target, identity)
+    if destination.exists() and not same_file:
+        errors.append(f"Target ISO already exists: {destination.name}")
+    elif not newer and not same_file:
+        errors.append("The supplied Windows image is not newer than the installed image.")
+    if not os.access(device.mount_path, os.W_OK):
+        errors.append("The Ventoy drive is not writable.")
+    action = UpdateAction.ADD if not errors and not same_file else UpdateAction.SKIP
+    return _make_plan(
+        device,
+        (
+            PlanItem(
+                local,
+                target,
+                action,
+                shutil.disk_usage(device.mount_path).free,
+                None,
+                VerificationLevel.CHECKSUM,
+                warnings,
+                tuple(errors),
+                replacement_allowed=same_file and not errors,
+            ),
+        ),
+    )
 
 
 def toggle_replace_action(plan: UpdatePlan, path: os.PathLike[str]) -> UpdatePlan:

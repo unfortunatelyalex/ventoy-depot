@@ -36,12 +36,21 @@ To add a supported ISO that is not yet on the drive, choose **Add new ISO** (or 
 `N`), select the exact product, edition, channel and architecture, and review the generated
 add-only plan. An existing target filename is never overwritten by this workflow.
 
-For a renamed ISO that cannot be recognized, highlight its row and choose **Assign ISO**
-(or press `A`). Select the original product and enter the variant and installed version.
+For a renamed ISO that cannot be recognized, or an explicitly chosen migration from a
+discontinued variant, highlight its row and choose **Assign ISO** (or press `A`). Existing
+identity fields are prefilled and can be edited. Select the original product and enter the
+variant and installed version.
 The mapping is stored in `.ventoy-depot/catalog.json` on that drive and is bound to the
 ISO's SHA-256 hash, so replacing or modifying the file invalidates stale mappings. The
 assignment dialog reads the ISO-9660 volume identifier without mounting the image and uses
 it only to suggest a product; the user still confirms every identity field.
+
+For public Windows media, Ventoy Depot never automates Microsoft login or form submission.
+Highlight the recognized Windows ISO and choose **Official Windows link** (or press `L`).
+Obtain the temporary ISO URL and published SHA-256 directly from the Microsoft page shown
+in the dialog. The app accepts only allow-listed Microsoft HTTPS hosts and a filename whose
+product, language, architecture, edition and channel match the existing ISO, then uses the
+same confirmation and transactional transfer pipeline as other updates.
 
 Automatic official resolution currently covers Arch Linux, Ubuntu, Kubuntu, Lubuntu,
 Xubuntu, Ubuntu Budgie, Ubuntu Unity, Ubuntu MATE, Ubuntu Cinnamon, Edubuntu,

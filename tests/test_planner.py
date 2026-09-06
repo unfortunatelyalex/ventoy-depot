@@ -6,7 +6,12 @@ from types import SimpleNamespace
 import pytest
 
 from ventoy_depot.models import DetectedIso, Device, IsoIdentity, ReleaseArtifact, UpdateAction
-from ventoy_depot.planner import build_add_plan, build_plan, toggle_replace_action
+from ventoy_depot.planner import (
+    build_add_plan,
+    build_official_link_plan,
+    build_plan,
+    toggle_replace_action,
+)
 from ventoy_depot.security import SecurityError
 
 
@@ -142,6 +147,72 @@ def test_same_filename_update_requires_explicit_replace(monkeypatch, tmp_path: P
 
     safe_again = toggle_replace_action(replacement, iso)
     assert safe_again.items[0].action == UpdateAction.SKIP
+
+
+def test_official_windows_link_builds_variant_bound_add_plan(monkeypatch, tmp_path: Path) -> None:
+    installed_path = tmp_path / "Win11_25H2_German_x64.iso"
+    installed_path.write_bytes(b"old")
+    installed = IsoIdentity(
+        "windows-11",
+        "windows-11",
+        "multi-edition",
+        "consumer",
+        "stable",
+        "x86_64",
+        "de-de",
+        "25H2",
+        None,
+    )
+    local = DetectedIso(installed_path, installed, 0.98, "filename")
+    url = "https://software.download.prss.microsoft.com/dbazure/Win11_26H1_German_x64.iso?t=token"
+    monkeypatch.setattr("ventoy_depot.planner.validate_https_url", lambda value, hosts: None)
+
+    plan = build_official_link_plan(device(tmp_path), local, url, "A" * 64)
+
+    item = plan.items[0]
+    assert item.action == UpdateAction.ADD
+    assert item.target is not None
+    assert item.target.filename == "Win11_26H1_German_x64.iso"
+    assert item.target.download_url == url
+    assert item.target.checksum == "a" * 64
+    assert item.target.identity is not None
+    assert item.target.identity.variant_key() == installed.variant_key()
+
+
+def test_official_windows_link_rejects_variant_switch_and_untrusted_host(
+    monkeypatch, tmp_path: Path
+) -> None:
+    installed_path = tmp_path / "Win11_25H2_German_x64.iso"
+    installed_path.write_bytes(b"old")
+    installed = IsoIdentity(
+        "windows-11",
+        "windows-11",
+        "multi-edition",
+        "consumer",
+        "stable",
+        "x86_64",
+        "de-de",
+        "25H2",
+        None,
+    )
+    local = DetectedIso(installed_path, installed, 0.98, "filename")
+
+    with pytest.raises(SecurityError, match="allow-listed"):
+        build_official_link_plan(
+            device(tmp_path),
+            local,
+            "https://evil.example/Win11_26H1_German_x64.iso",
+            "a" * 64,
+        )
+
+    monkeypatch.setattr("ventoy_depot.planner.validate_https_url", lambda value, hosts: None)
+    with pytest.raises(RuntimeError, match="variant"):
+        build_official_link_plan(
+            device(tmp_path),
+            local,
+            "https://software.download.prss.microsoft.com/Win11_26H1_English_x64.iso",
+            "a" * 64,
+        )
 
 
 def test_custom_provider_can_never_replace_existing_iso(monkeypatch, tmp_path: Path) -> None:

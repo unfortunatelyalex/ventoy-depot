@@ -29,9 +29,14 @@ from .config import Settings, cache_path, load_settings, save_settings
 from .devices import DeviceError, discover_ventoy_devices, manual_device, revalidate_device
 from .i18n import translate
 from .iso import verify_detected_iso
-from .models import Device, IsoIdentity, LocalVerification, PlanItem, UpdatePlan
+from .models import DetectedIso, Device, IsoIdentity, LocalVerification, PlanItem, UpdatePlan
 from .network import configure_proxy
-from .planner import build_add_plan, build_plan, toggle_replace_action
+from .planner import (
+    build_add_plan,
+    build_official_link_plan,
+    build_plan,
+    toggle_replace_action,
+)
 from .providers import Provider, provider_map
 from .report import ItemResult, ResultStatus, RunReport
 from .security import safe_subdirectory
@@ -183,6 +188,57 @@ class ManualMountDialog(ModalScreen[Path | None]):
             )
             return
         self.dismiss(path)
+
+
+class OfficialLinkDialog(ModalScreen[tuple[str, str] | None]):
+    CSS = """
+    OfficialLinkDialog { align: center middle; }
+    #official-link-dialog {
+        width: 85; max-width: 95%; height: auto;
+        border: thick $accent; background: $surface; padding: 1 2;
+    }
+    #official-link-dialog Input { margin: 1 0; }
+    #official-link-dialog Button { margin-right: 1; }
+    """
+
+    def __init__(self, item: PlanItem, language: str) -> None:
+        super().__init__()
+        self.item = item
+        self.language = language
+
+    def compose(self) -> ComposeResult:
+        provider_id = self.item.local.identity.provider_id if self.item.local.identity else ""
+        source = {
+            "windows-10": "https://www.microsoft.com/software-download/windows10ISO",
+            "windows-11": "https://www.microsoft.com/software-download/windows11",
+            "windows-server": "https://www.microsoft.com/evalcenter/",
+        }.get(provider_id, "https://www.microsoft.com/")
+        with Container(id="official-link-dialog"):
+            yield Static(f"[bold]{translate('official_link_title', self.language)}[/bold]")
+            yield Static(translate("official_link_help", self.language).format(source=source))
+            yield Input(placeholder="https://software.download…/Win11_…iso", id="official-url")
+            yield Input(placeholder="SHA-256 (64 hex)", id="official-checksum")
+            yield Static("", id="official-link-error")
+            with Horizontal():
+                yield Button(
+                    translate("prepare_official_link", self.language), id="official-link-save"
+                )
+                yield Button(translate("cancel", self.language), id="official-link-cancel")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "official-link-cancel":
+            self.dismiss(None)
+            return
+        if event.button.id != "official-link-save":
+            return
+        url = self.query_one("#official-url", Input).value.strip()
+        checksum = self.query_one("#official-checksum", Input).value.strip()
+        if not url or not checksum:
+            self.query_one("#official-link-error", Static).update(
+                translate("official_link_required", self.language)
+            )
+            return
+        self.dismiss((url, checksum))
 
 
 _ASSIGNMENT_PROFILES = (
@@ -660,6 +716,7 @@ class VentoyDepotApp(App[None]):
         ("space", "toggle_selection", "Select ISO"),
         ("x", "replace_old", "Replace old ISO"),
         ("a", "assign_identity", "Assign ISO"),
+        ("l", "official_link", "Official Windows link"),
         ("n", "add_iso", "Add new ISO"),
         ("v", "verify_iso", "Verify ISO"),
         ("t", "empty_trash", "Empty trash"),
@@ -692,6 +749,9 @@ class VentoyDepotApp(App[None]):
                 yield Button(translate("manual_mount", self.language), id="manual-mount")
                 yield Button(translate("check_updates", self.language), id="scan", disabled=True)
                 yield Button(translate("assign_iso", self.language), id="assign", disabled=True)
+                yield Button(
+                    translate("official_link", self.language), id="official-link", disabled=True
+                )
                 yield Button(translate("add_iso", self.language), id="add", disabled=True)
                 yield Button(translate("verify_iso", self.language), id="verify", disabled=True)
                 yield Button(
@@ -730,6 +790,7 @@ class VentoyDepotApp(App[None]):
         self.query_one("#scan", Button).disabled = device is None
         self.query_one("#update", Button).disabled = True
         self.query_one("#assign", Button).disabled = device is None
+        self.query_one("#official-link", Button).disabled = True
         self.query_one("#add", Button).disabled = device is None
         self.query_one("#replace", Button).disabled = True
         self.query_one("#verify", Button).disabled = True
@@ -760,6 +821,8 @@ class VentoyDepotApp(App[None]):
             self.action_scan()
         elif event.button.id == "assign":
             self.action_assign_identity()
+        elif event.button.id == "official-link":
+            self.action_official_link()
         elif event.button.id == "add":
             self.action_add_iso()
         elif event.button.id == "verify":
@@ -797,6 +860,7 @@ class VentoyDepotApp(App[None]):
         self.query_one("#update", Button).disabled = True
         self.query_one("#replace", Button).disabled = True
         self.query_one("#assign", Button).disabled = True
+        self.query_one("#official-link", Button).disabled = True
         self.query_one("#add", Button).disabled = True
         self.query_one("#verify", Button).disabled = True
         self.query_one("#empty-trash", Button).disabled = True
@@ -1005,6 +1069,11 @@ class VentoyDepotApp(App[None]):
         self.query_one("#verify", Button).disabled = not any(
             item.local.path.is_file() for item in self.row_items
         )
+        self.query_one("#official-link", Button).disabled = not any(
+            item.local.identity is not None
+            and item.local.identity.provider_id in {"windows-10", "windows-11", "windows-server"}
+            for item in self.row_items
+        )
 
     def action_toggle_selection(self) -> None:
         if self.operation_running:
@@ -1038,6 +1107,58 @@ class VentoyDepotApp(App[None]):
             ),
             partial(self._assignment_chosen, item.local.path),
         )
+
+    def action_official_link(self) -> None:
+        if self.operation_running:
+            return
+        table = self.query_one("#isos", DataTable)
+        if not self.row_items or table.cursor_row >= len(self.row_items):
+            return
+        item = self.row_items[table.cursor_row]
+        identity = item.local.identity
+        if identity is None or identity.provider_id not in {
+            "windows-10",
+            "windows-11",
+            "windows-server",
+        }:
+            self.query_one("#status", Static).update(
+                translate("official_link_windows_only", self.language)
+            )
+            return
+        selected = self.query_one("#device", Select).value
+        device = self.devices.get(str(selected))
+        if device is not None:
+            self.push_screen(
+                OfficialLinkDialog(item, self.language),
+                partial(self._official_link_chosen, device, item.local),
+            )
+
+    def _official_link_chosen(
+        self,
+        device: Device,
+        local: DetectedIso,
+        values: tuple[str, str] | None,
+    ) -> None:
+        if values is not None:
+            self._build_official_link_plan(device, local, *values)
+
+    @work(thread=True, exclusive=True, group="metadata")
+    def _build_official_link_plan(
+        self,
+        device: Device,
+        local: DetectedIso,
+        url: str,
+        checksum: str,
+    ) -> None:
+        self.call_from_thread(
+            self._set_running, True, translate("checking_official_link", self.language)
+        )
+        try:
+            plan = build_official_link_plan(device, local, url, checksum)
+        except Exception as error:
+            self.call_from_thread(self._show_error, str(error))
+        else:
+            self.call_from_thread(self._show_plan, plan)
 
     def action_replace_old(self) -> None:
         if self.operation_running or self.plan is None:
@@ -1273,6 +1394,7 @@ class VentoyDepotApp(App[None]):
             "manual-mount",
             "scan",
             "assign",
+            "official-link",
             "add",
             "verify",
             "replace",
@@ -1286,6 +1408,15 @@ class VentoyDepotApp(App[None]):
                 or (
                     button_id == "replace"
                     and not any(item.replacement_allowed for item in self.row_items)
+                )
+                or (
+                    button_id == "official-link"
+                    and not any(
+                        item.local.identity is not None
+                        and item.local.identity.provider_id
+                        in {"windows-10", "windows-11", "windows-server"}
+                        for item in self.row_items
+                    )
                 )
                 or (
                     button_id == "add"

@@ -21,6 +21,16 @@ _MESSAGES = {
         "replace_old": "Replace old ISO",
         "replace_unavailable": "The highlighted ISO cannot be replaced automatically.",
         "assign_iso": "Assign ISO",
+        "official_link": "Official Windows link",
+        "official_link_title": "Use an official Microsoft ISO link",
+        "official_link_help": (
+            "Open {source}, select the same product, language and architecture, then paste "
+            "Microsoft's temporary ISO URL and the complete SHA-256 shown by Microsoft."
+        ),
+        "prepare_official_link": "Validate and prepare plan",
+        "official_link_required": "The official HTTPS URL and SHA-256 are required.",
+        "official_link_windows_only": "Highlight a recognized Windows ISO first.",
+        "checking_official_link": "Validating the official Microsoft link and identity…",
         "add_iso": "Add new ISO",
         "add_title": "Add a new official ISO",
         "add_help": (
@@ -55,7 +65,7 @@ _MESSAGES = {
         "build_optional": "Build (optional)",
         "save_assignment": "Save assignment",
         "assignment_required": "Product, version, channel and architecture are required.",
-        "scan_before_assign": "Check updates first, then highlight an unknown ISO.",
+        "scan_before_assign": "Check updates first, then highlight an ISO.",
         "already_identified": "{name} is already identified automatically.",
         "saving_assignment": "Hashing the ISO and saving its assignment…",
         "assignment_saved": "Assignment saved; rebuilding the update plan…",
@@ -124,6 +134,16 @@ _MESSAGES = {
         "replace_old": "Alte ISO ersetzen",
         "replace_unavailable": "Die markierte ISO kann nicht automatisch ersetzt werden.",
         "assign_iso": "ISO zuordnen",
+        "official_link": "Offizieller Windows-Link",
+        "official_link_title": "Offiziellen Microsoft-ISO-Link verwenden",
+        "official_link_help": (
+            "Öffne {source}, wähle dasselbe Produkt, dieselbe Sprache und Architektur und füge "
+            "dann Microsofts temporäre ISO-URL sowie die vollständige dort angezeigte SHA-256 ein."
+        ),
+        "prepare_official_link": "Prüfen und Plan erstellen",
+        "official_link_required": "Offizielle HTTPS-URL und SHA-256 sind erforderlich.",
+        "official_link_windows_only": "Markiere zuerst eine erkannte Windows-ISO.",
+        "checking_official_link": "Offizieller Microsoft-Link und Identität werden geprüft…",
         "add_iso": "Neue ISO hinzufügen",
         "add_title": "Neue offizielle ISO hinzufügen",
         "add_help": (
@@ -161,7 +181,7 @@ _MESSAGES = {
         "build_optional": "Build (optional)",
         "save_assignment": "Zuordnung speichern",
         "assignment_required": "Produkt, Version, Kanal und Architektur sind erforderlich.",
-        "scan_before_assign": "Zuerst Updates prüfen und dann eine unbekannte ISO markieren.",
+        "scan_before_assign": "Zuerst Updates prüfen und dann eine ISO markieren.",
         "already_identified": "{name} wurde bereits automatisch erkannt.",
         "saving_assignment": "ISO wird gehasht und ihre Zuordnung gespeichert…",
         "assignment_saved": "Zuordnung gespeichert; Updateplan wird neu erstellt…",

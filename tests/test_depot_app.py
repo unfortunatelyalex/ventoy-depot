@@ -11,6 +11,7 @@ from ventoy_depot.app import (
     AddIsoDialog,
     AssignIdentity,
     ConfirmEmptyTrash,
+    OfficialLinkDialog,
     SettingsDialog,
     VentoyDepotApp,
     _write_report,
@@ -341,6 +342,40 @@ def test_assignment_dialog_prefills_detected_identity_for_editing(
             assert app.screen.query_one("#assign-flavor", Input).value == "nvidia"
             assert app.screen.query_one("#assign-version", Input).value == "39"
             assert app.screen.query_one("#assign-build", Input).value == "2024-01-24"
+
+    asyncio.run(exercise())
+
+
+def test_official_link_dialog_requires_url_and_checksum(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr("ventoy_depot.app.discover_ventoy_devices", lambda: [])
+    identity = IsoIdentity(
+        "windows-11",
+        "windows-11",
+        "multi-edition",
+        "consumer",
+        "stable",
+        "x86_64",
+        "de-de",
+        "25H2",
+        None,
+    )
+    item = PlanItem(
+        DetectedIso(tmp_path / "Win11_25H2_German_x64.iso", identity, 0.98, "filename"),
+        None,
+        UpdateAction.SKIP,
+        100,
+        None,
+        VerificationLevel.UNVERIFIED,
+    )
+
+    async def exercise() -> None:
+        app = VentoyDepotApp()
+        async with app.run_test() as pilot:
+            app.push_screen(OfficialLinkDialog(item, "en"))
+            await pilot.pause()
+            app.screen.query_one("#official-link-save", Button).press()
+            await pilot.pause()
+            assert "required" in str(app.screen.query_one("#official-link-error", Static).content)
 
     asyncio.run(exercise())
 
