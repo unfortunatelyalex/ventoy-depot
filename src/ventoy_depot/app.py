@@ -407,20 +407,34 @@ class AssignIdentity(ModalScreen[IsoIdentity | None]):
     #assign-dialog Button { margin-right: 1; }
     """
 
-    def __init__(self, path: Path, language: str, volume_id: str | None = None) -> None:
+    def __init__(
+        self,
+        path: Path,
+        language: str,
+        volume_id: str | None = None,
+        identity: IsoIdentity | None = None,
+    ) -> None:
         super().__init__()
         self.path = path
         self.language = language
         self.volume_id = volume_id
+        self.identity = identity
 
     def compose(self) -> ComposeResult:
         options = [
             (label, f"{provider_id}|{product_id}|{architecture}")
             for label, provider_id, product_id, architecture in _ASSIGNMENT_PROFILES
         ]
-        suggested = _suggested_profile(self.volume_id)
+        suggested = (
+            self.identity.provider_id if self.identity else _suggested_profile(self.volume_id)
+        )
         initial = next(
-            (value for _label, value in options if value.split("|", 1)[0] == suggested),
+            (
+                value
+                for _label, value in options
+                if value.split("|", 2)[0] == suggested
+                and (self.identity is None or value.split("|", 2)[1] == self.identity.product_id)
+            ),
             options[0][1],
         )
         with VerticalScroll(id="assign-dialog"):
@@ -434,19 +448,41 @@ class AssignIdentity(ModalScreen[IsoIdentity | None]):
             yield Static(translate("provider_product", self.language))
             yield Select(options, allow_blank=False, value=initial, id="assign-profile")
             yield Static(translate("edition", self.language))
-            yield Input(placeholder="desktop, server, core, kde …", id="assign-edition")
+            yield Input(
+                self.identity.edition if self.identity and self.identity.edition else "",
+                placeholder="desktop, server, core, kde …",
+                id="assign-edition",
+            )
             yield Static(translate("flavor", self.language))
-            yield Input(placeholder="minimal, nvidia, edge …", id="assign-flavor")
+            yield Input(
+                self.identity.flavor if self.identity and self.identity.flavor else "",
+                placeholder="minimal, nvidia, edge …",
+                id="assign-flavor",
+            )
             yield Static(translate("channel", self.language))
-            yield Input("stable", id="assign-channel")
+            yield Input(self.identity.channel if self.identity else "stable", id="assign-channel")
             yield Static(translate("architecture", self.language))
-            yield Input("x86_64", id="assign-architecture")
+            yield Input(
+                self.identity.architecture if self.identity else "x86_64",
+                id="assign-architecture",
+            )
             yield Static(translate("language", self.language))
-            yield Input(placeholder="en-us, de-de …", id="assign-language")
+            yield Input(
+                self.identity.language if self.identity and self.identity.language else "",
+                placeholder="en-us, de-de …",
+                id="assign-language",
+            )
             yield Static(translate("installed_version", self.language))
-            yield Input(placeholder="24.04, 40, 2026.08.15 …", id="assign-version")
+            yield Input(
+                self.identity.version if self.identity and self.identity.version else "",
+                placeholder="24.04, 40, 2026.08.15 …",
+                id="assign-version",
+            )
             yield Static(translate("build_optional", self.language))
-            yield Input(id="assign-build")
+            yield Input(
+                self.identity.build if self.identity and self.identity.build else "",
+                id="assign-build",
+            )
             yield Static("", id="assign-error")
             with Horizontal():
                 yield Button(translate("save_assignment", self.language), id="assign-save")
@@ -993,13 +1029,13 @@ class VentoyDepotApp(App[None]):
             self.query_one("#status", Static).update(translate("scan_before_assign", self.language))
             return
         item = self.row_items[table.cursor_row]
-        if item.local.identity is not None:
-            self.query_one("#status", Static).update(
-                translate("already_identified", self.language).format(name=item.local.path.name)
-            )
-            return
         self.push_screen(
-            AssignIdentity(item.local.path, self.language, item.local.volume_id),
+            AssignIdentity(
+                item.local.path,
+                self.language,
+                item.local.volume_id,
+                item.local.identity,
+            ),
             partial(self._assignment_chosen, item.local.path),
         )
 

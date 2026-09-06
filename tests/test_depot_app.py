@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 from rich.text import Text
-from textual.widgets import Button, Static, TextArea
+from textual.widgets import Button, Input, Select, Static, TextArea
 
 from ventoy_depot.app import (
     _ASSIGNMENT_PROFILES,
@@ -311,6 +311,36 @@ def test_assignment_dialog_uses_volume_id_as_nonbinding_profile_hint(
             assert any(
                 "Ubuntu 26.04" in str(widget.content) for widget in app.screen.query("Static")
             )
+
+    asyncio.run(exercise())
+
+
+def test_assignment_dialog_prefills_detected_identity_for_editing(
+    monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr("ventoy_depot.app.discover_ventoy_devices", lambda: [])
+    identity = IsoIdentity(
+        "nobara",
+        "nobara",
+        "kde",
+        "nvidia",
+        "stable",
+        "x86_64",
+        None,
+        "39",
+        "2024-01-24",
+    )
+
+    async def exercise() -> None:
+        app = VentoyDepotApp()
+        async with app.run_test() as pilot:
+            app.push_screen(AssignIdentity(tmp_path / "nobara.iso", "en", identity=identity))
+            await pilot.pause()
+            assert str(app.screen.query_one("#assign-profile", Select).value).startswith("nobara|")
+            assert app.screen.query_one("#assign-edition", Input).value == "kde"
+            assert app.screen.query_one("#assign-flavor", Input).value == "nvidia"
+            assert app.screen.query_one("#assign-version", Input).value == "39"
+            assert app.screen.query_one("#assign-build", Input).value == "2024-01-24"
 
     asyncio.run(exercise())
 

@@ -35,20 +35,21 @@ def build_plan(
     for detected in detected_isos:
         errors: list[str] = []
         identity = detected.identity
-        if identity is None:
-            try:
-                identity = assignments.lookup(detected.path)
-            except AssignmentError as error:
-                errors.append(str(error))
-            if identity is not None:
-                detected = replace(
-                    detected,
-                    identity=identity,
-                    confidence=1.0,
-                    detection_source="catalog-sha256",
-                )
-            else:
-                errors.append("ISO identity is unknown; highlight it and choose Assign ISO.")
+        try:
+            assigned = assignments.lookup(detected.path)
+        except AssignmentError as error:
+            errors.append(str(error))
+            assigned = None
+        if assigned is not None:
+            identity = assigned
+            detected = replace(
+                detected,
+                identity=identity,
+                confidence=1.0,
+                detection_source="catalog-sha256",
+            )
+        elif identity is None and not errors:
+            errors.append("ISO identity is unknown; highlight it and choose Assign ISO.")
         if identity is not None and identity.provider_id not in providers:
             errors.append(f"Unknown provider in ISO assignment: {identity.provider_id}")
         prepared.append((detected, identity, errors))
