@@ -30,6 +30,12 @@ def test_label_must_be_exactly_ventoy(tmp_path: Path) -> None:
     assert is_ventoy_root(tmp_path, "not-ventoy-backup") == (False, "")
 
 
+def test_ventoy_efi_partition_is_never_a_data_volume(tmp_path: Path) -> None:
+    (tmp_path / "ventoy").mkdir()
+
+    assert is_ventoy_root(tmp_path, "VTOYEFI") == (False, "")
+
+
 def test_manual_device_requires_a_ventoy_filesystem_marker(tmp_path: Path) -> None:
     with pytest.raises(DeviceError, match="no Ventoy label or marker"):
         manual_device(tmp_path)

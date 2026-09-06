@@ -15,7 +15,10 @@ class DeviceError(RuntimeError):
 
 
 def is_ventoy_root(path: Path, label: str = "") -> tuple[bool, str]:
-    if label.strip().casefold() == "ventoy":
+    normalized_label = label.strip().casefold()
+    if normalized_label == "vtoyefi":
+        return False, ""
+    if normalized_label == "ventoy":
         return True, "volume-label"
     directory_marker = path / "ventoy"
     file_marker = path / ".ventoy"
