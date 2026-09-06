@@ -56,7 +56,7 @@ same confirmation and transactional transfer pipeline as other updates.
 Automatic official resolution currently covers Arch Linux, Ubuntu, Kubuntu, Lubuntu,
 Xubuntu, Ubuntu Budgie, Ubuntu Unity, Ubuntu MATE, Ubuntu Cinnamon, Edubuntu,
 Ubuntu Studio, Ubuntu Kylin, Debian, Devuan, Fedora
-Workstation/Server/KDE, Alpine Linux, Rocky Linux, AlmaLinux, CentOS Stream,
+Workstation/Server/KDE, Alpine Linux, Rocky Linux, AlmaLinux, Oracle Linux, CentOS Stream,
 Linux Mint stable editions,
 EndeavourOS, CachyOS, Clonezilla, Gentoo, GhostBSD, GParted Live, Grml, Haiku,
 Hiren's BootCD PE, Kali Linux, KDE neon,

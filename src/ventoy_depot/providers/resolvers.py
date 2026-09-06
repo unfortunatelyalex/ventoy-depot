@@ -15,6 +15,7 @@ BUILTIN_RESOLVER_IDS = frozenset(
         "alpine",
         "rocky-linux",
         "almalinux",
+        "oracle-linux",
         "ubuntu",
         "ubuntu-flavors",
         "debian",
@@ -71,6 +72,7 @@ def resolve_release(provider_id: str, identity: IsoIdentity) -> ReleaseArtifact:
         "alpine": _alpine,
         "rocky-linux": _rocky_linux,
         "almalinux": _almalinux,
+        "oracle-linux": _oracle_linux,
         "ubuntu": _ubuntu,
         "ubuntu-flavors": _ubuntu_flavors,
         "debian": _debian,
@@ -309,6 +311,50 @@ def _almalinux(identity: IsoIdentity) -> ReleaseArtifact:
         product_name="AlmaLinux",
         host="repo.almalinux.org",
         root="https://repo.almalinux.org/almalinux/{channel}/isos/{architecture}/",
+    )
+
+
+def _oracle_linux(identity: IsoIdentity) -> ReleaseArtifact:
+    if identity.product_id != "oracle-linux" or identity.edition not in {
+        "dvd",
+        "boot",
+        "boot-uek",
+    }:
+        raise ProviderError("This Oracle Linux installation medium is not supported.")
+    if identity.channel not in {"8", "9", "10"} or identity.architecture not in {
+        "x86_64",
+        "aarch64",
+    }:
+        raise ProviderError("This Oracle Linux release channel or architecture is unsupported.")
+    hosts = {"yum.oracle.com", "linux.oracle.com"}
+    client = SafeHttpClient(frozenset(hosts))
+    page = _text(client, "https://yum.oracle.com/oracle-linux-isos.html")
+    expression = re.compile(
+        rf"https://yum\.oracle\.com/ISOS/OracleLinux/OL{re.escape(identity.channel)}/"
+        rf"u(?P<update>\d+)/{re.escape(identity.architecture)}/"
+        rf"(?P<filename>OracleLinux-R(?P<version>{re.escape(identity.channel)}-U(?P=update))-"
+        rf"(?:Server-)?{re.escape(identity.architecture)}-{re.escape(identity.edition)}\.iso)\b",
+        re.IGNORECASE,
+    )
+    matches = list(expression.finditer(page))
+    if not matches:
+        raise ProviderError("The official Oracle Linux page lacks the selected ISO variant.")
+    match = max(matches, key=lambda item: int(item.group("update")))
+    filename, url = match.group("filename"), match.group(0)
+    checksum_url = (
+        "https://linux.oracle.com/security/gpg/checksum/"
+        f"OracleLinux-R{identity.channel}-U{match.group('update')}-Server-"
+        f"{identity.architecture}.checksum"
+    )
+    checksum = _checksum(_text(client, checksum_url), filename, "sha256")
+    return _artifact(
+        identity,
+        match.group("version"),
+        filename,
+        url,
+        "sha256",
+        checksum,
+        hosts,
     )
 
 

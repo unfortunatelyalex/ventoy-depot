@@ -259,6 +259,27 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
         ),
     ),
     FilenameProvider(
+        "oracle-linux",
+        "Oracle Linux",
+        (
+            FilenameRule(
+                re.compile(
+                    r"OracleLinux-R(?P<version>(?P<channel>8|9|10)-U\d+)-"
+                    r"(?:Server-)?(?P<architecture>x86_64|aarch64)-"
+                    r"(?P<edition>dvd|boot|boot-uek)\.iso$",
+                    re.I,
+                ),
+                "oracle-linux",
+            ),
+        ),
+        ProviderCapabilities(
+            ("dvd", "boot", "boot-uek"),
+            ("x86_64", "aarch64"),
+            (),
+            ("8", "9", "10"),
+        ),
+    ),
+    FilenameProvider(
         "ubuntu",
         "Ubuntu",
         (

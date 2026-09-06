@@ -1643,6 +1643,55 @@ def test_almalinux_resolver_preserves_architecture_and_major_channel(monkeypatch
     assert artifact.identity.variant_key() == installed.variant_key()
 
 
+@pytest.mark.parametrize(
+    ("edition", "architecture"),
+    [("dvd", "x86_64"), ("boot", "x86_64"), ("boot-uek", "aarch64")],
+)
+def test_oracle_linux_resolver_preserves_media_and_architecture(
+    monkeypatch, edition: str, architecture: str
+) -> None:
+    filename = f"OracleLinux-R10-U2-{architecture}-{edition}.iso"
+    url = f"https://yum.oracle.com/ISOS/OracleLinux/OL10/u2/{architecture}/{filename}"
+    old_name = f"OracleLinux-R10-U1-{architecture}-{edition}.iso"
+    old_url = f"https://yum.oracle.com/ISOS/OracleLinux/OL10/u1/{architecture}/{old_name}"
+    checksum_url = (
+        "https://linux.oracle.com/security/gpg/checksum/"
+        f"OracleLinux-R10-U2-Server-{architecture}.checksum"
+    )
+    digest = "c" * 64
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, requested: str) -> bytes:
+            if requested == "https://yum.oracle.com/oracle-linux-isos.html":
+                return f'<a href="{old_url}">old</a><a href="{url}">new</a>'.encode()
+            assert requested == checksum_url
+            return f"{digest}  {filename}\n".encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "oracle-linux",
+        "oracle-linux",
+        edition,
+        None,
+        "10",
+        architecture,
+        None,
+        "10-U1",
+        None,
+    )
+    artifact = resolvers.resolve_release("oracle-linux", installed)
+
+    assert artifact.version == "10-U2"
+    assert artifact.filename == filename
+    assert artifact.download_url == url
+    assert artifact.checksum == digest
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()
+
+
 def test_ubuntu_flavor_resolver_preserves_product_and_lts_channel(monkeypatch) -> None:
     filename = "kubuntu-26.04.1-desktop-amd64.iso"
     root = "https://cdimage.ubuntu.com/kubuntu/releases/"
