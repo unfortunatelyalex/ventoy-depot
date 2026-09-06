@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import platform
+import re
 import shutil
 import stat
 import subprocess
@@ -55,6 +56,13 @@ def apply_item(
     else:
         device_root = device.mount_path.resolve(strict=True)
         _within(device_root, item.local.path)
+    if artifact.source_path is not None:
+        try:
+            artifact.source_path.resolve(strict=True).relative_to(device_root)
+        except ValueError:
+            pass
+        else:
+            raise TransferError("The imported source ISO must be outside the Ventoy drive.")
     destination = item.local.path.parent / safe_filename(artifact.filename)
     _within(device_root, destination)
     same_file_replace = bool(
@@ -72,6 +80,9 @@ def apply_item(
     if shutil.disk_usage(device_root).free < required:
         raise TransferError("Insufficient free space on the Ventoy drive.")
 
+    source_path = artifact.source_path
+    if source_path is not None and (source_path.is_symlink() or not source_path.is_file()):
+        raise TransferError("The imported source ISO is missing or is not a regular file.")
     client = SafeHttpClient(artifact.allowed_hosts, timeout=60)
     temporary_context = (
         tempfile.TemporaryDirectory(prefix="ventoy-depot-") if cache_dir is None else None
@@ -79,12 +90,23 @@ def apply_item(
     staging = Path(temporary_context.name) if temporary_context else cache_dir
     assert staging is not None
     staging.mkdir(parents=True, exist_ok=True)
-    downloaded = staging / f"{artifact.filename}.download"
+    downloaded = (
+        source_path.resolve(strict=True)
+        if source_path is not None
+        else staging / f"{artifact.filename}.download"
+    )
     partial = destination.with_name(f"{destination.name}.partial")
     checked_progress = _checked_progress(progress, cancelled)
     try:
         _raise_if_cancelled(cancelled)
-        _download(client, artifact.download_url, downloaded, artifact.size_bytes, checked_progress)
+        if source_path is None:
+            _download(
+                client,
+                artifact.download_url,
+                downloaded,
+                artifact.size_bytes,
+                checked_progress,
+            )
         try:
             _verify(
                 downloaded,
@@ -95,8 +117,9 @@ def apply_item(
                 stage="download-verify",
             )
         except TransferError:
-            downloaded.unlink(missing_ok=True)
-            downloaded.with_suffix(downloaded.suffix + ".json").unlink(missing_ok=True)
+            if source_path is None:
+                downloaded.unlink(missing_ok=True)
+                downloaded.with_suffix(downloaded.suffix + ".json").unlink(missing_ok=True)
             raise
         if artifact.verification_level == VerificationLevel.SIGNED:
             if trusted_keyring is None:
@@ -209,17 +232,28 @@ def _download(
     response = client.open(url, headers)
     try:
         status = getattr(response, "status", 200)
+        current_validator = response.headers.get("ETag") or response.headers.get("Last-Modified")
+        if existing and status == 206 and current_validator and current_validator != validator:
+            target.unlink(missing_ok=True)
+            validator_path.unlink(missing_ok=True)
+            response.close()
+            return _download(client, url, target, expected_size, progress)
+        if status == 206:
+            range_start, range_total = _content_range(response.headers.get("Content-Range"))
+            if existing and range_start != existing:
+                target.unlink(missing_ok=True)
+                validator_path.unlink(missing_ok=True)
+                response.close()
+                return _download(client, url, target, expected_size, progress)
+            if not existing and range_start != 0:
+                raise TransferError("Server returned an unusable partial download response.")
+            if expected_size is not None and range_total not in {None, expected_size}:
+                raise TransferError("Download size does not match provider metadata.")
         mode = "ab" if existing and status == 206 else "wb"
         completed = existing if mode == "ab" else 0
         total = expected_size or completed + int(response.headers.get("Content-Length", 0))
         if total and shutil.disk_usage(target.parent).free < max(total - completed, 0):
             raise TransferError("Insufficient free space in the download staging directory.")
-        current_validator = response.headers.get("ETag") or response.headers.get("Last-Modified")
-        if mode == "ab" and current_validator and current_validator != validator:
-            target.unlink(missing_ok=True)
-            validator_path.unlink(missing_ok=True)
-            response.close()
-            return _download(client, url, target, expected_size, progress)
         if current_validator:
             validator_path.write_text(
                 json.dumps({"validator": current_validator}) + "\n", encoding="utf-8"
@@ -244,6 +278,19 @@ def _download(
         response.close()
     if expected_size is not None and completed != expected_size:
         raise TransferError("Download size does not match provider metadata.")
+
+
+def _content_range(value: str | None) -> tuple[int, int | None]:
+    match = re.fullmatch(r"bytes (\d+)-(\d+)/(\d+|\*)", value or "")
+    if match is None:
+        return -1, None
+    start, end = int(match.group(1)), int(match.group(2))
+    if end < start:
+        return -1, None
+    total = None if match.group(3) == "*" else int(match.group(3))
+    if total is not None and end >= total:
+        return -1, None
+    return start, total
 
 
 def _load_download_validator(path: Path) -> str | None:

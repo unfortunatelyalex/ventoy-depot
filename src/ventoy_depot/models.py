@@ -55,6 +55,7 @@ class ReleaseArtifact:
     signer_fingerprints: tuple[str, ...]
     allowed_hosts: frozenset[str]
     identity: IsoIdentity | None = None
+    source_path: Path | None = None
 
     @property
     def verification_level(self) -> VerificationLevel:

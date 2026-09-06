@@ -90,7 +90,7 @@ class FilenameProvider(Provider):
         ):
             return True
         if (
-            self.provider_id == "opensuse-leap"
+            self.provider_id in {"opensuse-leap", "xcp-ng"}
             and artifact.version == identity.version
             and artifact.build
             and identity.build is None
@@ -1216,6 +1216,47 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
             ),
         ),
         ProviderCapabilities(("installer",), ("amd64", "i386"), (), ("release",)),
+    ),
+    FilenameProvider(
+        "openindiana",
+        "OpenIndiana Hipster",
+        (
+            FilenameRule(
+                re.compile(
+                    r"OI-hipster-(?P<edition>gui|text|minimal)-"
+                    r"(?P<version>\d{8})\.iso$",
+                    re.I,
+                ),
+                "openindiana",
+                default_channel="rolling",
+                default_architecture="x86_64",
+            ),
+        ),
+        ProviderCapabilities(
+            ("gui", "text", "minimal"),
+            ("x86_64",),
+            (),
+            ("rolling",),
+        ),
+    ),
+    FilenameProvider(
+        "xcp-ng",
+        "XCP-ng",
+        (
+            FilenameRule(
+                re.compile(
+                    r"xcp-ng-(?P<version>\d+(?:\.\d+){2})"
+                    r"(?:-(?P<build>\d{8}(?:\.\d+)?))?"
+                    r"(?:-(?P<edition>netinstall))?\.iso$",
+                    re.I,
+                ),
+                "xcp-ng",
+                default_channel="lts",
+                default_architecture="x86_64",
+                default_edition="full",
+            ),
+        ),
+        ProviderCapabilities(("full", "netinstall"), ("x86_64",), (), ("lts",)),
     ),
     FilenameProvider(
         "porteux",

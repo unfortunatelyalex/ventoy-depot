@@ -693,6 +693,79 @@ def test_netbsd_resolver_uses_latest_release_sha512(monkeypatch) -> None:
     assert artifact.checksum == digest
 
 
+@pytest.mark.parametrize("edition", ["gui", "text", "minimal"])
+def test_openindiana_resolver_preserves_installer_edition(monkeypatch, edition: str) -> None:
+    filename = f"OI-hipster-{edition}-20260430.iso"
+    url = f"https://dlc.openindiana.org/isos/hipster/20260430/{filename}"
+    digest = "8" * 64
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, requested: str) -> bytes:
+            if requested == "https://www.openindiana.org/downloads/":
+                return (
+                    f'<a href="{url.removeprefix("https:")}">{filename}</a>'
+                    '<a href="https://dlc.openindiana.org/isos/hipster/20251031/'
+                    f'OI-hipster-{edition}-20251031.iso">old</a>'
+                ).encode()
+            assert requested == url + ".sha256sum"
+            return f"{digest}  {filename}\n".encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "openindiana",
+        "openindiana",
+        edition,
+        None,
+        "rolling",
+        "x86_64",
+        None,
+        "20251031",
+        None,
+    )
+    artifact = resolvers.resolve_release("openindiana", installed)
+
+    assert artifact.version == "20260430"
+    assert artifact.filename == filename
+    assert artifact.download_url == url
+    assert artifact.checksum == digest
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()
+
+
+@pytest.mark.parametrize("edition", ["full", "netinstall"])
+def test_xcp_ng_resolver_selects_latest_refresh_for_edition(monkeypatch, edition: str) -> None:
+    suffix = "-netinstall" if edition == "netinstall" else ""
+    filename = f"xcp-ng-8.3.0-20260806{suffix}.iso"
+    digest = "7" * 64
+    old = f"xcp-ng-8.3.0-20250606{suffix}.iso"
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, requested: str) -> bytes:
+            if requested == "https://updates.xcp-ng.org/isos/":
+                return b'<a href="8.2/">old</a><a href="8.3/">current</a>'
+            assert requested == "https://updates.xcp-ng.org/isos/8.3/SHA256SUMS"
+            return f"{'6' * 64}  {old}\n{digest}  {filename}\n".encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "xcp-ng", "xcp-ng", edition, None, "lts", "x86_64", None, "8.3.0", "20250606"
+    )
+    artifact = resolvers.resolve_release("xcp-ng", installed)
+
+    assert artifact.version == "8.3.0"
+    assert artifact.build == "20260806"
+    assert artifact.filename == filename
+    assert artifact.checksum == digest
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()
+
+
 def test_porteux_resolver_preserves_desktop_and_uses_release_digest(monkeypatch) -> None:
     filename = "porteux-2.8-current-xfce-4.20-x86_64.iso"
     digest = "a" * 64

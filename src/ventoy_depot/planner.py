@@ -264,6 +264,88 @@ def build_official_link_plan(
     )
 
 
+def build_official_file_plan(
+    device: Device,
+    local: DetectedIso,
+    source_path: Path,
+    checksum: str,
+) -> UpdatePlan:
+    """Build a write-confirmable plan from an already downloaded Microsoft ISO."""
+    identity = local.identity
+    if identity is None or identity.provider_id not in _MICROSOFT_DOWNLOAD_HOSTS:
+        raise ValueError("Official file handoff is available only for recognized Windows media.")
+    normalized_checksum = checksum.strip().lower()
+    if not re.fullmatch(r"[a-f0-9]{64}", normalized_checksum):
+        raise ValueError("Enter the complete official SHA-256 checksum (64 hexadecimal digits).")
+    if source_path.is_symlink() or not source_path.is_file():
+        raise ValueError("Select an existing regular ISO file; symlinks are not accepted.")
+    source = source_path.resolve(strict=True)
+    try:
+        source.relative_to(device.mount_path.resolve(strict=True))
+    except ValueError:
+        pass
+    else:
+        raise ValueError("The imported ISO must be outside the selected Ventoy drive.")
+    filename = safe_filename(source.name)
+    if source.suffix.lower() != ".iso":
+        raise ValueError("The imported Microsoft media must be an ISO file.")
+    providers = provider_map()
+    provider = providers.get(identity.provider_id)
+    if provider is None:
+        raise ValueError(f"Unknown provider: {identity.provider_id}")
+    detected_target = provider.detect(Path(filename))
+    if detected_target is None or detected_target.identity is None:
+        raise ValueError("The imported filename is not recognized as matching Windows media.")
+    provider.validate_binding(identity, detected_target.identity)
+    target_identity = detected_target.identity
+    version = target_identity.version or target_identity.build or identity.version or "evaluation"
+    target = ReleaseArtifact(
+        version,
+        target_identity.build,
+        filename,
+        "",
+        source.stat().st_size,
+        "sha256",
+        normalized_checksum,
+        None,
+        (),
+        frozenset(),
+        target_identity,
+        source,
+    )
+    destination = local.path.parent / filename
+    warnings = ("Official Microsoft ISO and SHA-256 were supplied by the user.",)
+    errors: list[str] = []
+    same_file = destination.exists() and destination.resolve() == local.path.resolve()
+    newer = provider.is_newer(target, identity)
+    if destination.exists() and not same_file:
+        errors.append(f"Target ISO already exists: {destination.name}")
+    elif not newer and not same_file:
+        errors.append("The supplied Windows image is not newer than the installed image.")
+    if not os.access(device.mount_path, os.W_OK):
+        errors.append("The Ventoy drive is not writable.")
+    free = shutil.disk_usage(device.mount_path).free
+    if source.stat().st_size > free:
+        errors.append("Insufficient free space on the Ventoy drive.")
+    action = UpdateAction.ADD if not errors and not same_file else UpdateAction.SKIP
+    return _make_plan(
+        device,
+        (
+            PlanItem(
+                local,
+                target,
+                action,
+                free,
+                source.stat().st_size,
+                VerificationLevel.CHECKSUM,
+                warnings,
+                tuple(errors),
+                replacement_allowed=same_file and not errors,
+            ),
+        ),
+    )
+
+
 def toggle_replace_action(plan: UpdatePlan, path: os.PathLike[str]) -> UpdatePlan:
     """Toggle one item between its safe default and an explicit replacement."""
     changed = False

@@ -33,6 +33,7 @@ from .models import DetectedIso, Device, IsoIdentity, LocalVerification, PlanIte
 from .network import configure_proxy
 from .planner import (
     build_add_plan,
+    build_official_file_plan,
     build_official_link_plan,
     build_plan,
     toggle_replace_action,
@@ -216,7 +217,10 @@ class OfficialLinkDialog(ModalScreen[tuple[str, str] | None]):
         with Container(id="official-link-dialog"):
             yield Static(f"[bold]{translate('official_link_title', self.language)}[/bold]")
             yield Static(translate("official_link_help", self.language).format(source=source))
-            yield Input(placeholder="https://software.download…/Win11_…iso", id="official-url")
+            yield Input(
+                placeholder="https://software.download…/Win11_…iso or /path/to/Win11_….iso",
+                id="official-url",
+            )
             yield Input(placeholder="SHA-256 (64 hex)", id="official-checksum")
             yield Static("", id="official-link-error")
             with Horizontal():
@@ -298,6 +302,8 @@ _ASSIGNMENT_PROFILES = (
     ("Hiren's BootCD PE", "hirens-bootcd-pe", "hirens-bootcd-pe", "x86_64"),
     ("ShredOS", "shredos", "shredos", "x86_64"),
     ("NetBSD", "netbsd", "netbsd", "amd64"),
+    ("OpenIndiana Hipster", "openindiana", "openindiana", "x86_64"),
+    ("XCP-ng", "xcp-ng", "xcp-ng", "x86_64"),
     ("PorteuX", "porteux", "porteux", "x86_64"),
     ("GhostBSD", "ghostbsd", "ghostbsd", "amd64"),
     ("Haiku", "haiku", "haiku", "x86_64"),
@@ -327,6 +333,8 @@ _VOLUME_PROFILE_HINTS = (
     ("SHREDOS", "shredos"),
     ("GENTOO", "gentoo"),
     ("NETBSD", "netbsd"),
+    ("OPENINDIANA", "openindiana"),
+    ("XCP-NG", "xcp-ng"),
     ("FREEBSD", "freebsd"),
     ("PROXMOX", "proxmox"),
     ("CACHYOS", "cachyos"),
@@ -716,7 +724,7 @@ class VentoyDepotApp(App[None]):
         ("space", "toggle_selection", "Select ISO"),
         ("x", "replace_old", "Replace old ISO"),
         ("a", "assign_identity", "Assign ISO"),
-        ("l", "official_link", "Official Windows link"),
+        ("l", "official_link", "Official Windows source"),
         ("n", "add_iso", "Add new ISO"),
         ("v", "verify_iso", "Verify ISO"),
         ("t", "empty_trash", "Empty trash"),
@@ -1140,21 +1148,24 @@ class VentoyDepotApp(App[None]):
         values: tuple[str, str] | None,
     ) -> None:
         if values is not None:
-            self._build_official_link_plan(device, local, *values)
+            self._build_official_source_plan(device, local, *values)
 
     @work(thread=True, exclusive=True, group="metadata")
-    def _build_official_link_plan(
+    def _build_official_source_plan(
         self,
         device: Device,
         local: DetectedIso,
-        url: str,
+        source: str,
         checksum: str,
     ) -> None:
         self.call_from_thread(
             self._set_running, True, translate("checking_official_link", self.language)
         )
         try:
-            plan = build_official_link_plan(device, local, url, checksum)
+            if source.startswith("https://"):
+                plan = build_official_link_plan(device, local, source, checksum)
+            else:
+                plan = build_official_file_plan(device, local, Path(source).expanduser(), checksum)
         except Exception as error:
             self.call_from_thread(self._show_error, str(error))
         else:

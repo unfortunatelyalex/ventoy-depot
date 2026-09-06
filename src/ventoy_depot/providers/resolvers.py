@@ -47,6 +47,8 @@ BUILTIN_RESOLVER_IDS = frozenset(
         "hirens-bootcd-pe",
         "shredos",
         "netbsd",
+        "openindiana",
+        "xcp-ng",
         "porteux",
         "ghostbsd",
         "haiku",
@@ -101,6 +103,8 @@ def resolve_release(provider_id: str, identity: IsoIdentity) -> ReleaseArtifact:
         "hirens-bootcd-pe": _hirens_bootcd_pe,
         "shredos": _shredos,
         "netbsd": _netbsd,
+        "openindiana": _openindiana,
+        "xcp-ng": _xcp_ng,
         "porteux": _porteux,
         "ghostbsd": _ghostbsd,
         "haiku": _haiku,
@@ -1508,6 +1512,89 @@ def _netbsd(identity: IsoIdentity) -> ReleaseArtifact:
         "sha512",
         checksum,
         {host},
+    )
+
+
+def _openindiana(identity: IsoIdentity) -> ReleaseArtifact:
+    if identity.product_id != "openindiana" or identity.edition not in {
+        "gui",
+        "text",
+        "minimal",
+    }:
+        raise ProviderError("This OpenIndiana installer edition is not supported.")
+    if identity.architecture != "x86_64" or identity.channel != "rolling":
+        raise ProviderError("OpenIndiana automatic updates support rolling x86_64 ISOs only.")
+    hosts = {"www.openindiana.org", "dlc.openindiana.org"}
+    client = SafeHttpClient(frozenset(hosts))
+    page = _text(client, "https://www.openindiana.org/downloads/")
+    expression = re.compile(
+        r"(?:https:)?//dlc\.openindiana\.org/isos/hipster/"
+        r"(?P<version>\d{8})/"
+        rf"(?P<filename>OI-hipster-{re.escape(identity.edition)}-"
+        r"(?P=version)\.iso)\b",
+        re.IGNORECASE,
+    )
+    matches = list(expression.finditer(page))
+    if not matches:
+        raise ProviderError("The official OpenIndiana page lacks the selected ISO edition.")
+    match = max(matches, key=lambda item: item.group("version"))
+    filename, url = match.group("filename"), match.group(0)
+    if url.startswith("//"):
+        url = "https:" + url
+    checksum = _checksum(_text(client, url + ".sha256sum"), filename, "sha256")
+    return _artifact(
+        identity,
+        match.group("version"),
+        filename,
+        url,
+        "sha256",
+        checksum,
+        hosts,
+    )
+
+
+def _xcp_ng(identity: IsoIdentity) -> ReleaseArtifact:
+    if identity.product_id != "xcp-ng" or identity.edition not in {"full", "netinstall"}:
+        raise ProviderError("This XCP-ng installer edition is not supported.")
+    if identity.architecture != "x86_64" or identity.channel != "lts":
+        raise ProviderError("XCP-ng automatic updates support LTS x86_64 ISOs only.")
+    host = "updates.xcp-ng.org"
+    client = SafeHttpClient(frozenset({host}))
+    root = f"https://{host}/isos/"
+    listing = _text(client, root)
+    series = set(re.findall(r'href=["\'](?P<series>\d+\.\d+)/["\']', listing, re.I))
+    if not series:
+        raise ProviderError("The official XCP-ng directory contains no release series.")
+    current = max(series, key=_version_key)
+    base = f"{root}{current}/"
+    sums = _text(client, base + "SHA256SUMS")
+    expression = re.compile(
+        r"\b(xcp-ng-(?P<version>\d+(?:\.\d+){2})-"
+        r"(?P<build>\d{8}(?:\.\d+)?)"
+        r"(?P<netinstall>-netinstall)?\.iso)\b",
+        re.IGNORECASE,
+    )
+    matches = [
+        match
+        for match in expression.finditer(sums)
+        if (match.group("netinstall") is not None) == (identity.edition == "netinstall")
+    ]
+    if not matches:
+        raise ProviderError("The official XCP-ng checksum list lacks this installer edition.")
+    match = max(
+        matches,
+        key=lambda item: (_version_key(item.group("version")), _version_key(item.group("build"))),
+    )
+    filename = match.group(1)
+    return _artifact(
+        identity,
+        match.group("version"),
+        filename,
+        base + filename,
+        "sha256",
+        _checksum(sums, filename, "sha256"),
+        {host},
+        build=match.group("build"),
     )
 
 

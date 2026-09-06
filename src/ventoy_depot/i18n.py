@@ -21,16 +21,19 @@ _MESSAGES = {
         "replace_old": "Replace old ISO",
         "replace_unavailable": "The highlighted ISO cannot be replaced automatically.",
         "assign_iso": "Assign ISO",
-        "official_link": "Official Windows link",
-        "official_link_title": "Use an official Microsoft ISO link",
+        "official_link": "Official Windows source",
+        "official_link_title": "Use an official Microsoft ISO",
         "official_link_help": (
             "Open {source}, select the same product, language and architecture, then paste "
-            "Microsoft's temporary ISO URL and the complete SHA-256 shown by Microsoft."
+            "Microsoft's temporary ISO URL or an absolute path to an already downloaded ISO, "
+            "plus the complete SHA-256 shown by Microsoft."
         ),
         "prepare_official_link": "Validate and prepare plan",
-        "official_link_required": "The official HTTPS URL and SHA-256 are required.",
+        "official_link_required": (
+            "An official HTTPS URL or local ISO path and SHA-256 are required."
+        ),
         "official_link_windows_only": "Highlight a recognized Windows ISO first.",
-        "checking_official_link": "Validating the official Microsoft link and identity…",
+        "checking_official_link": "Validating the official Microsoft source and identity…",
         "add_iso": "Add new ISO",
         "add_title": "Add a new official ISO",
         "add_help": (
@@ -134,16 +137,19 @@ _MESSAGES = {
         "replace_old": "Alte ISO ersetzen",
         "replace_unavailable": "Die markierte ISO kann nicht automatisch ersetzt werden.",
         "assign_iso": "ISO zuordnen",
-        "official_link": "Offizieller Windows-Link",
-        "official_link_title": "Offiziellen Microsoft-ISO-Link verwenden",
+        "official_link": "Offizielle Windows-Quelle",
+        "official_link_title": "Offizielle Microsoft-ISO verwenden",
         "official_link_help": (
             "Öffne {source}, wähle dasselbe Produkt, dieselbe Sprache und Architektur und füge "
-            "dann Microsofts temporäre ISO-URL sowie die vollständige dort angezeigte SHA-256 ein."
+            "dann Microsofts temporäre ISO-URL oder den absoluten Pfad einer bereits geladenen "
+            "ISO sowie die vollständige dort angezeigte SHA-256 ein."
         ),
         "prepare_official_link": "Prüfen und Plan erstellen",
-        "official_link_required": "Offizielle HTTPS-URL und SHA-256 sind erforderlich.",
+        "official_link_required": (
+            "Offizielle HTTPS-URL oder lokaler ISO-Pfad und SHA-256 sind erforderlich."
+        ),
         "official_link_windows_only": "Markiere zuerst eine erkannte Windows-ISO.",
-        "checking_official_link": "Offizieller Microsoft-Link und Identität werden geprüft…",
+        "checking_official_link": "Offizielle Microsoft-Quelle und Identität werden geprüft…",
         "add_iso": "Neue ISO hinzufügen",
         "add_title": "Neue offizielle ISO hinzufügen",
         "add_help": (

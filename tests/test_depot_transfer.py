@@ -104,6 +104,45 @@ def test_verified_download_is_atomically_added_and_old_iso_remains(
     assert not destination.with_name(destination.name + ".partial").exists()
 
 
+def test_verified_local_source_is_copied_without_network_or_source_mutation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ventoy = tmp_path / "ventoy"
+    ventoy.mkdir()
+    (ventoy / ".ventoy").touch()
+    source = tmp_path / "official.iso"
+    source.write_bytes(b"official local ISO")
+    Client.data = b""
+    plan_item = item(ventoy, hashlib.sha256(source.read_bytes()).hexdigest())
+    assert plan_item.target is not None
+    plan_item = replace(
+        plan_item,
+        target=replace(
+            plan_item.target,
+            filename="imported.iso",
+            download_url="",
+            size_bytes=source.stat().st_size,
+            source_path=source,
+        ),
+    )
+    monkeypatch.setattr("ventoy_depot.transfer.revalidate_device", lambda device: device)
+
+    class NoNetwork:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def open(self, *_args: object, **_kwargs: object) -> Response:
+            raise AssertionError("local imports must not use the network")
+
+    monkeypatch.setattr("ventoy_depot.transfer.SafeHttpClient", NoNetwork)
+
+    destination = apply_item(plan_item, cache_dir=tmp_path / "cache")
+
+    assert destination.read_bytes() == source.read_bytes()
+    assert source.read_bytes() == b"official local ISO"
+    assert plan_item.local.path.read_bytes() == b"old ISO"
+
+
 def same_filename_replacement(root: Path, checksum: str) -> PlanItem:
     original = item(root, checksum)
     assert original.target is not None
@@ -301,6 +340,7 @@ def test_changed_resume_validator_closes_response_before_restart(tmp_path: Path)
     target.with_suffix(".download.json").write_text('{"validator": "old-etag"}\n', encoding="utf-8")
     first = Response(b"ignored")
     first.status = 206
+    first.headers["Content-Range"] = "bytes 3-9/10"
     first.headers["ETag"] = "new-etag"
     second = Response(b"fresh!")
 
@@ -317,6 +357,37 @@ def test_changed_resume_validator_closes_response_before_restart(tmp_path: Path)
     _download(  # type: ignore[arg-type]
         SequenceClient(), "https://example.org/image.iso", target, len(b"fresh!"), None
     )
+    assert target.read_bytes() == b"fresh!"
+
+
+def test_resume_with_wrong_content_range_restarts_without_appending(tmp_path: Path) -> None:
+    target = tmp_path / "image.download"
+    target.write_bytes(b"old")
+    target.with_suffix(".download.json").write_text(
+        '{"validator": "same-etag"}\n', encoding="utf-8"
+    )
+    partial = Response(b"wrong suffix")
+    partial.status = 206
+    partial.headers["ETag"] = "same-etag"
+    partial.headers["Content-Range"] = "bytes 4-15/16"
+    fresh = Response(b"fresh!")
+
+    class SequenceClient:
+        calls = 0
+
+        def open(self, _url: str, headers: dict[str, str]) -> Response:
+            self.calls += 1
+            if self.calls == 1:
+                assert headers["Range"] == "bytes=3-"
+                return partial
+            assert "Range" not in headers
+            assert partial.closed
+            return fresh
+
+    _download(  # type: ignore[arg-type]
+        SequenceClient(), "https://example.org/image.iso", target, len(b"fresh!"), None
+    )
+
     assert target.read_bytes() == b"fresh!"
 
 

@@ -8,6 +8,7 @@ import pytest
 from ventoy_depot.models import DetectedIso, Device, IsoIdentity, ReleaseArtifact, UpdateAction
 from ventoy_depot.planner import (
     build_add_plan,
+    build_official_file_plan,
     build_official_link_plan,
     build_plan,
     toggle_replace_action,
@@ -212,6 +213,70 @@ def test_official_windows_link_rejects_variant_switch_and_untrusted_host(
             local,
             "https://software.download.prss.microsoft.com/Win11_26H1_English_x64.iso",
             "a" * 64,
+        )
+
+
+def test_official_windows_file_builds_variant_bound_add_plan(tmp_path: Path) -> None:
+    ventoy = tmp_path / "ventoy"
+    downloads = tmp_path / "downloads"
+    ventoy.mkdir()
+    downloads.mkdir()
+    installed_path = ventoy / "Win11_25H2_German_x64.iso"
+    installed_path.write_bytes(b"old")
+    source = downloads / "Win11_26H1_German_x64.iso"
+    source.write_bytes(b"official image")
+    installed = IsoIdentity(
+        "windows-11",
+        "windows-11",
+        "multi-edition",
+        "consumer",
+        "stable",
+        "x86_64",
+        "de-de",
+        "25H2",
+        None,
+    )
+
+    plan = build_official_file_plan(
+        device(ventoy),
+        DetectedIso(installed_path, installed, 0.98, "filename"),
+        source,
+        "B" * 64,
+    )
+
+    item = plan.items[0]
+    assert item.action == UpdateAction.ADD
+    assert item.target is not None
+    assert item.target.source_path == source.resolve()
+    assert item.target.download_url == ""
+    assert item.target.checksum == "b" * 64
+    assert item.target.identity is not None
+    assert item.target.identity.variant_key() == installed.variant_key()
+
+
+def test_official_windows_file_rejects_source_on_ventoy_drive(tmp_path: Path) -> None:
+    installed_path = tmp_path / "Win11_25H2_German_x64.iso"
+    installed_path.write_bytes(b"old")
+    source = tmp_path / "Win11_26H1_German_x64.iso"
+    source.write_bytes(b"new")
+    installed = IsoIdentity(
+        "windows-11",
+        "windows-11",
+        "multi-edition",
+        "consumer",
+        "stable",
+        "x86_64",
+        "de-de",
+        "25H2",
+        None,
+    )
+
+    with pytest.raises(ValueError, match="outside"):
+        build_official_file_plan(
+            device(tmp_path),
+            DetectedIso(installed_path, installed, 0.98, "filename"),
+            source,
+            "b" * 64,
         )
 
 

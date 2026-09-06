@@ -46,9 +46,10 @@ assignment dialog reads the ISO-9660 volume identifier without mounting the imag
 it only to suggest a product; the user still confirms every identity field.
 
 For public Windows media, Ventoy Depot never automates Microsoft login or form submission.
-Highlight the recognized Windows ISO and choose **Official Windows link** (or press `L`).
-Obtain the temporary ISO URL and published SHA-256 directly from the Microsoft page shown
-in the dialog. The app accepts only allow-listed Microsoft HTTPS hosts and a filename whose
+Highlight the recognized Windows ISO and choose **Official Windows source** (or press `L`).
+Obtain the temporary ISO URL or download the ISO yourself, and copy the published SHA-256
+directly from the Microsoft page shown in the dialog. The app accepts only allow-listed
+Microsoft HTTPS hosts or a regular local file outside the Ventoy drive, and a filename whose
 product, language, architecture, edition and channel match the existing ISO, then uses the
 same confirmation and transactional transfer pipeline as other updates.
 
@@ -60,9 +61,9 @@ Linux Mint stable editions,
 EndeavourOS, CachyOS, Clonezilla, Gentoo, GhostBSD, GParted Live, Grml, Haiku,
 Hiren's BootCD PE, Kali Linux, KDE neon,
 netboot.xyz, NixOS, SystemRescue, ALT Rescue, Finnix, UrBackup Restore Stick,
-openSUSE Leap, openSUSE Tumbleweed, FreeBSD, Omarchy, Parrot OS,
+openSUSE Leap, openSUSE Tumbleweed, FreeBSD, OpenIndiana Hipster, Omarchy, Parrot OS,
 Pop!_OS, PorteuX, Mageia,
-Proxmox, Rescuezilla, Solus, TrueNAS Community Edition, Void Linux, Vanilla OS and the free Zorin OS
+Proxmox, XCP-ng, Rescuezilla, Solus, TrueNAS Community Edition, Void Linux, Vanilla OS and the free Zorin OS
 editions and Tails. Windows 10/11, Windows Server Evaluation, Qubes OS and Memtest86+ are
 recognized but remain
 download-disabled until their mirror, signature-chain or archive-extraction requirements
