@@ -203,6 +203,7 @@ _ASSIGNMENT_PROFILES = (
     ("Ubuntu Kylin", "ubuntu-flavors", "ubuntukylin", "amd64"),
     ("Debian", "debian", "debian", "amd64"),
     ("Debian Live", "debian", "debian", "amd64"),
+    ("Devuan GNU+Linux", "devuan", "devuan", "amd64"),
     ("Fedora", "fedora", "fedora", "x86_64"),
     ("Linux Mint", "linux-mint", "linux-mint", "x86_64"),
     ("EndeavourOS", "endeavouros", "endeavouros", "x86_64"),

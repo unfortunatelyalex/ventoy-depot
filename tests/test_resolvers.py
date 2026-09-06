@@ -44,6 +44,175 @@ def test_pop_os_uses_official_variant_api(monkeypatch) -> None:
     assert artifact.checksum == "b" * 64
 
 
+def test_endeavouros_resolver_uses_current_download_page(monkeypatch) -> None:
+    filename = "EndeavourOS_Titan-Nova-2026.08.15.iso"
+    url = f"https://mirror.alpix.eu/endeavouros/iso/{filename}"
+    digest = "e" * 128
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, requested: str) -> bytes:
+            if requested == "https://endeavouros.com/download/":
+                return f'<a href="{url}">ISO</a>'.encode()
+            assert requested == url + ".sha512sum"
+            return f"{digest}  {filename}\n".encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+
+    artifact = resolvers.resolve_release("endeavouros", identity("endeavouros"))
+
+    assert artifact.version == "2026.08.15"
+    assert artifact.download_url == url
+    assert artifact.checksum_algorithm == "sha512"
+    assert artifact.checksum == digest
+
+
+@pytest.mark.parametrize("edition", ["netinstall", "desktop-live"])
+def test_devuan_resolver_preserves_installer_or_live_medium(monkeypatch, edition: str) -> None:
+    filename = f"devuan_excalibur_6.1.1_amd64_{edition}.iso"
+    directory = "desktop-live" if edition == "desktop-live" else "installer-iso"
+    base = f"https://files.devuan.org/devuan_excalibur/{directory}/"
+    digest = "d" * 64
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, requested: str) -> bytes:
+            if requested == "https://files.devuan.org/":
+                return (
+                    b'<a href="https://www.devuan.org/os/announce/'
+                    b'excalibur-release-announce-2025-11-02">Current Release Announcement</a>'
+                )
+            if requested == base:
+                return f'<a href="{filename}">{filename}</a>'.encode()
+            expected = base + (
+                filename + ".sha256" if edition == "desktop-live" else "SHA256SUMS.txt"
+            )
+            assert requested == expected
+            return f"{digest}  {filename}\n".encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "devuan", "devuan", edition, None, "stable", "amd64", None, "5.0.1", None
+    )
+
+    artifact = resolvers.resolve_release("devuan", installed)
+
+    assert artifact.version == "6.1.1"
+    assert artifact.filename == filename
+    assert artifact.download_url == base + filename
+    assert artifact.checksum == digest
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()
+
+
+@pytest.mark.parametrize("flavor", ["full", "minimal"])
+def test_manjaro_resolver_uses_official_variant_metadata(monkeypatch, flavor: str) -> None:
+    suffix = "-minimal" if flavor == "minimal" else ""
+    filename = f"manjaro-kde-26.1.0{suffix}-260812-linux71.iso"
+    url = f"https://download.manjaro.org/kde/26.1.0/{filename}"
+    digest = "f" * 64
+    payload = {
+        "official": {
+            "plasma": {
+                "image": "https://download.manjaro.org/kde/26.1.0/manjaro-kde-26.1.0-260812-linux71.iso",
+                "checksum": "https://download.manjaro.org/kde/26.1.0/manjaro-kde-26.1.0-260812-linux71.iso.sha256",
+                "minimal": {"image": url, "checksum": url + ".sha256"},
+            }
+        }
+    }
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, requested: str) -> bytes:
+            if requested.startswith("https://gitlab.manjaro.org/"):
+                return json.dumps(payload).encode()
+            assert requested == url + ".sha256"
+            return f"{digest}  {filename}\n".encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "manjaro", "manjaro", "kde", flavor, "stable", "x86_64", None, "23.1.3", "240113"
+    )
+
+    artifact = resolvers.resolve_release("manjaro", installed)
+
+    assert artifact.version == "26.1.0"
+    assert artifact.build == "260812"
+    assert artifact.filename == filename
+    assert artifact.download_url == url
+    assert artifact.checksum == digest
+
+
+def test_zorin_free_edition_uses_official_iso_redirect(monkeypatch) -> None:
+    digest = "a" * 64
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, requested: str) -> bytes:
+            assert requested.startswith("https://help.zorin.com/")
+            return f"Zorin OS 18.1 Core 64-bit: {digest}".encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    artifact = resolvers.resolve_release("zorin-os", identity("zorin-os", "core"))
+
+    assert artifact.filename == "Zorin-OS-18.1-Core-64-bit.iso"
+    assert artifact.download_url == "https://zrn.co/18core64"
+    assert artifact.checksum == digest
+
+
+def test_nobara_resolver_preserves_current_edition(monkeypatch) -> None:
+    filename = "Nobara-44-KDE-2026-09-02.iso"
+    url = f"https://nobara-images.nobaraproject.org/{filename}"
+    digest = "b" * 64
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, requested: str) -> bytes:
+            if requested == "https://nobaraproject.org/download.html":
+                return f'<button data-iso="{filename}" data-url="{url}">'.encode()
+            assert requested == url + ".sha256sum"
+            return f"{digest}  {filename}\n".encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "nobara", "nobara", "kde", None, "stable", "x86_64", None, "43", "2025-01-01"
+    )
+
+    artifact = resolvers.resolve_release("nobara", installed)
+
+    assert artifact.version == "44"
+    assert artifact.build == "2026-09-02"
+    assert artifact.filename == filename
+    assert artifact.download_url == url
+    assert artifact.checksum == digest
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()
+
+
+def test_discontinued_mint_and_nobara_variants_require_explicit_migration() -> None:
+    mint = IsoIdentity(
+        "linux-mint", "linux-mint", "cinnamon", "edge", "stable", "x86_64", None, "21.3", None
+    )
+    nobara = IsoIdentity(
+        "nobara", "nobara", "kde", "nvidia", "stable", "x86_64", None, "39", "2024-01-24"
+    )
+
+    with pytest.raises(resolvers.ProviderError, match="Edge image was discontinued"):
+        resolvers.resolve_release("linux-mint", mint)
+    with pytest.raises(resolvers.ProviderError, match="Nvidia-specific images were discontinued"):
+        resolvers.resolve_release("nobara", nobara)
+
+
 @pytest.mark.parametrize(
     ("edition", "flavor", "directory", "filename", "checksum_name"),
     [

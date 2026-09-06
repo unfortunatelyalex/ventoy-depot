@@ -318,6 +318,37 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
         ),
     ),
     FilenameProvider(
+        "devuan",
+        "Devuan GNU+Linux",
+        (
+            FilenameRule(
+                re.compile(
+                    r"devuan_[a-z]+_(?P<version>\d+(?:\.\d+)+)_"
+                    r"(?P<architecture>amd64)_(?P<edition>netinstall|server|desktop|"
+                    r"desktop-live|cd2|cd3|cd4|cd5|pool1)\.iso$",
+                    re.I,
+                ),
+                "devuan",
+            ),
+        ),
+        ProviderCapabilities(
+            (
+                "netinstall",
+                "server",
+                "desktop",
+                "desktop-live",
+                "cd2",
+                "cd3",
+                "cd4",
+                "cd5",
+                "pool1",
+            ),
+            ("amd64",),
+            (),
+            ("stable",),
+        ),
+    ),
+    FilenameProvider(
         "fedora",
         "Fedora",
         (
@@ -392,7 +423,7 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
                 default_architecture="x86_64",
             ),
         ),
-        ProviderCapabilities(("cinnamon", "mate", "xfce"), ("x86_64",), (), ("stable",)),
+        ProviderCapabilities(("cinnamon", "mate", "xfce"), ("x86_64",), (), ("stable",), ("edge",)),
     ),
     FilenameProvider(
         "endeavouros",
@@ -562,6 +593,7 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
             ("x86_64",),
             (),
             ("stable",),
+            ("nvidia",),
         ),
     ),
     FilenameProvider(

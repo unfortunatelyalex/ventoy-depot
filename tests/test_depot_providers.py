@@ -23,6 +23,12 @@ from ventoy_depot.providers.base import ProviderError
         ("ubuntustudio-26.04.1-desktop-amd64.iso", "ubuntu-flavors", "desktop", "amd64"),
         ("ubuntukylin-26.04.1-desktop-amd64.iso", "ubuntu-flavors", "desktop", "amd64"),
         ("debian-13.1.0-amd64-DVD-1.iso", "debian", "dvd-1", "amd64"),
+        (
+            "devuan_excalibur_6.1.1_amd64_desktop-live.iso",
+            "devuan",
+            "desktop-live",
+            "amd64",
+        ),
         ("Fedora-KDE-Live-x86_64-42-1.1.iso", "fedora", "kde", "x86_64"),
         ("Fedora-Xfce-Live-44-1.7.x86_64.iso", "fedora", "xfce", "x86_64"),
         (

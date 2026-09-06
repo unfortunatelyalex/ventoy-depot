@@ -4,7 +4,6 @@ import json
 import re
 from collections.abc import Iterable
 from dataclasses import replace
-from urllib.parse import urljoin
 
 from ..models import IsoIdentity, ReleaseArtifact
 from ..network import SafeHttpClient
@@ -19,6 +18,7 @@ BUILTIN_RESOLVER_IDS = frozenset(
         "ubuntu",
         "ubuntu-flavors",
         "debian",
+        "devuan",
         "fedora",
         "linux-mint",
         "endeavouros",
@@ -30,6 +30,7 @@ BUILTIN_RESOLVER_IDS = frozenset(
         "urbackup-restore",
         "kali-linux",
         "nixos",
+        "nobara",
         "systemrescue",
         "opensuse-tumbleweed",
         "opensuse-leap",
@@ -71,6 +72,7 @@ def resolve_release(provider_id: str, identity: IsoIdentity) -> ReleaseArtifact:
         "ubuntu": _ubuntu,
         "ubuntu-flavors": _ubuntu_flavors,
         "debian": _debian,
+        "devuan": _devuan,
         "fedora": _fedora,
         "linux-mint": _linux_mint,
         "endeavouros": _endeavouros,
@@ -82,6 +84,7 @@ def resolve_release(provider_id: str, identity: IsoIdentity) -> ReleaseArtifact:
         "urbackup-restore": _urbackup_restore,
         "kali-linux": _kali_linux,
         "nixos": _nixos,
+        "nobara": _nobara,
         "systemrescue": _systemrescue,
         "opensuse-tumbleweed": _opensuse_tumbleweed,
         "opensuse-leap": _opensuse_leap,
@@ -481,6 +484,11 @@ def _fedora(identity: IsoIdentity) -> ReleaseArtifact:
 
 
 def _linux_mint(identity: IsoIdentity) -> ReleaseArtifact:
+    if identity.flavor == "edge":
+        raise ProviderError(
+            "The historical Linux Mint Edge image was discontinued. Assign it to the standard "
+            "edition explicitly before updating."
+        )
     if identity.edition not in {"cinnamon", "mate", "xfce"} or identity.flavor:
         raise ProviderError("The installed Linux Mint variant is not available in the stable feed.")
     hosts = {"linuxmint.com", "pub.linuxmint.io", "mirrors.kernel.org"}
@@ -507,7 +515,7 @@ def _linux_mint(identity: IsoIdentity) -> ReleaseArtifact:
 def _endeavouros(identity: IsoIdentity) -> ReleaseArtifact:
     hosts = {"endeavouros.com", "mirror.alpix.eu"}
     client = SafeHttpClient(frozenset(hosts))
-    page = _text(client, "https://endeavouros.com/")
+    page = _text(client, "https://endeavouros.com/download/")
     links = re.findall(r'https://mirror\.alpix\.eu/[^"\'<> ]+\.iso', page)
     if not links:
         raise ProviderError("The EndeavourOS page contains no configured official mirror link.")
@@ -694,6 +702,51 @@ def _alt_rescue(identity: IsoIdentity) -> ReleaseArtifact:
     return _artifact(identity, version, filename, base + filename, "sha512", checksum, {host})
 
 
+def _devuan(identity: IsoIdentity) -> ReleaseArtifact:
+    installer_editions = {"netinstall", "server", "desktop", "cd2", "cd3", "cd4", "cd5", "pool1"}
+    if identity.edition not in installer_editions | {"desktop-live"}:
+        raise ProviderError("This Devuan installer or live variant is not supported.")
+    if identity.architecture != "amd64" or identity.channel != "stable" or identity.flavor:
+        raise ProviderError("Devuan automatic updates support stable amd64 images only.")
+    hosts = {"files.devuan.org", "www.devuan.org"}
+    client = SafeHttpClient(frozenset(hosts))
+    root = "https://files.devuan.org/"
+    root_page = _text(client, root)
+    release = re.search(
+        r'href="https://www\.devuan\.org/os/announce/(?P<codename>[a-z]+)-release-announce-'
+        r'[^"/]+">Current Release Announcement</a>',
+        root_page,
+        re.IGNORECASE,
+    )
+    if release is None:
+        raise ProviderError("Could not identify Devuan's current stable release directory.")
+    codename = release.group("codename").lower()
+    directory = "desktop-live" if identity.edition == "desktop-live" else "installer-iso"
+    base = f"{root}devuan_{codename}/{directory}/"
+    listing = _text(client, base)
+    pattern = re.compile(
+        rf"devuan_{re.escape(codename)}_(?P<version>\d+(?:\.\d+)+)_amd64_"
+        rf"{re.escape(identity.edition)}\.iso",
+        re.IGNORECASE,
+    )
+    matches = list(pattern.finditer(listing))
+    if not matches:
+        raise ProviderError("The Devuan release contains no matching ISO variant.")
+    match = max(matches, key=lambda item: _version_key(item.group("version")))
+    filename = match.group(0)
+    sums_url = base + (filename + ".sha256" if directory == "desktop-live" else "SHA256SUMS.txt")
+    checksum = _checksum(_text(client, sums_url), filename, "sha256")
+    return _artifact(
+        identity,
+        match.group("version"),
+        filename,
+        base + filename,
+        "sha256",
+        checksum,
+        hosts,
+    )
+
+
 def _urbackup_restore(identity: IsoIdentity) -> ReleaseArtifact:
     if (
         identity.product_id != "urbackup-restore"
@@ -842,6 +895,55 @@ def _systemrescue(identity: IsoIdentity) -> ReleaseArtifact:
     return _artifact(identity, version, filename, url, "sha256", checksum, hosts)
 
 
+def _nobara(identity: IsoIdentity) -> ReleaseArtifact:
+    if identity.flavor == "nvidia":
+        raise ProviderError(
+            "The historical Nobara Nvidia-specific images were discontinued. Assign this ISO "
+            "to a current unified edition explicitly before updating."
+        )
+    editions = {
+        "official": "Official",
+        "gnome": "GNOME",
+        "kde": "KDE",
+        "steam-htpc": "Steam-HTPC",
+        "steam-handheld": "Steam-Handheld",
+    }
+    try:
+        edition = editions[identity.edition or ""]
+    except KeyError as error:
+        raise ProviderError("This Nobara edition is not supported.") from error
+    if identity.architecture != "x86_64" or identity.channel != "stable" or identity.flavor:
+        raise ProviderError("Nobara automatic updates support stable x86_64 images only.")
+    hosts = {"nobaraproject.org", "nobara-images.nobaraproject.org"}
+    client = SafeHttpClient(frozenset(hosts))
+    page = _text(client, "https://nobaraproject.org/download.html")
+    pattern = re.compile(
+        rf"Nobara-(?P<version>\d+)-{re.escape(edition)}-"
+        r"(?P<build>\d{4}-\d{2}-\d{2})\.iso",
+        re.IGNORECASE,
+    )
+    matches = list(pattern.finditer(page))
+    if not matches:
+        raise ProviderError("The Nobara download page contains no matching ISO edition.")
+    match = max(
+        matches,
+        key=lambda item: (_version_key(item.group("version")), item.group("build")),
+    )
+    filename = match.group(0)
+    url = f"https://nobara-images.nobaraproject.org/{filename}"
+    checksum = _checksum(_text(client, url + ".sha256sum"), filename, "sha256")
+    return _artifact(
+        identity,
+        match.group("version"),
+        filename,
+        url,
+        "sha256",
+        checksum,
+        hosts,
+        build=match.group("build"),
+    )
+
+
 def _opensuse_tumbleweed(identity: IsoIdentity) -> ReleaseArtifact:
     editions = {"dvd", "net", "rescue-cd", "gnome-live", "kde-live", "xfce-live"}
     if identity.edition not in editions or identity.architecture not in {"x86_64", "aarch64"}:
@@ -968,32 +1070,41 @@ def _manjaro(identity: IsoIdentity) -> ReleaseArtifact:
         raise ProviderError("Manjaro review/preview updates require an explicit channel mapping.")
     if identity.flavor not in {"full", "minimal"}:
         raise ProviderError("Manjaro updates require an explicit full or minimal image flavor.")
-    host = "download.manjaro.org"
-    client = SafeHttpClient(frozenset({host}))
-    root = f"https://{host}/{identity.edition}/"
-    versions = re.findall(r'href=["\']([^/"\']+)/', _text(client, root))
-    versions = [value for value in versions if re.fullmatch(r"\d+(?:\.\d+)+", value)]
-    if not versions:
-        raise ProviderError("The Manjaro directory contains no stable release.")
-    version = max(versions, key=_version_key)
-    base = urljoin(root, version + "/")
-    listing = _text(client, base)
-    filenames = re.findall(r'href=["\'](manjaro-[^"\']+\.iso)["\']', listing)
-    minimal = identity.flavor == "minimal"
-    candidates = [name for name in filenames if ("-minimal-" in name) == minimal]
-    if not candidates:
-        raise ProviderError("The Manjaro directory contains no matching full/minimal ISO.")
-    filename = sorted(candidates, key=_version_key)[-1]
-    build = (re.search(r"-(\d{6})-linux", filename) or [None, None])[1]
-    sums = _text(client, base + filename + ".sha256")
+    hosts = {"download.manjaro.org", "gitlab.manjaro.org"}
+    client = SafeHttpClient(frozenset(hosts))
+    metadata_url = "https://gitlab.manjaro.org/webpage/iso-info/-/raw/master/file-info.json"
+    payload = json.loads(_text(client, metadata_url))
+    edition_key = "plasma" if identity.edition == "kde" else identity.edition
+    try:
+        variant = payload["official"][edition_key]
+        if identity.flavor == "minimal":
+            variant = variant["minimal"]
+        url = str(variant["image"])
+        sums_url = str(variant["checksum"])
+    except (KeyError, TypeError) as error:
+        raise ProviderError(
+            "The Manjaro metadata contains no matching full/minimal ISO."
+        ) from error
+    filename = url.rsplit("/", 1)[-1]
+    expected = re.fullmatch(
+        rf"manjaro-{re.escape(identity.edition)}-(?P<version>\d+(?:\.\d+)+)"
+        rf"{'-minimal' if identity.flavor == 'minimal' else ''}"
+        r"-(?P<build>\d{6})-linux\d+\.iso",
+        filename,
+    )
+    if expected is None or sums_url != url + ".sha256":
+        raise ProviderError("The Manjaro metadata returned invalid artifact paths.")
+    version = expected.group("version")
+    build = expected.group("build")
+    sums = _text(client, sums_url)
     return _artifact(
         identity,
         version,
         filename,
-        base + filename,
+        url,
         "sha256",
         _checksum(sums, filename, "sha256"),
-        {host},
+        hosts,
         build=build,
     )
 
@@ -1178,10 +1289,7 @@ def _zorin_os(identity: IsoIdentity) -> ReleaseArtifact:
     version, build = match.group("version"), match.group("build")
     suffix = f"-r{build}" if build else ""
     filename = f"Zorin-OS-{version}-{edition}-64-bit{suffix}.iso"
-    if edition == "Lite":
-        url = f"https://zrn.co/{version.split('.', 1)[0]}lite64"
-    else:
-        url = f"https://zorin.com/os/download/{version.split('.', 1)[0]}/{edition.lower()}/"
+    url = f"https://zrn.co/{version.split('.', 1)[0]}{edition.lower()}64"
     return _artifact(
         identity,
         version,
