@@ -14,6 +14,7 @@ from ventoy_depot.app import (
     OfficialLinkDialog,
     SettingsDialog,
     VentoyDepotApp,
+    _display_url,
     _write_report,
 )
 from ventoy_depot.config import Settings
@@ -197,6 +198,56 @@ def test_selected_row_shows_literal_checked_marker(monkeypatch, tmp_path: Path) 
             assert marker.plain == "[x]"
 
     asyncio.run(exercise())
+
+
+def test_iso_detail_panel_shows_verification_and_hides_url_query(
+    monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr("ventoy_depot.app.discover_ventoy_devices", lambda: [])
+    iso = tmp_path / "arch.iso"
+    identity = IsoIdentity("arch", "archlinux", None, None, "stable", "x86_64", None, "1", None)
+    item = PlanItem(
+        DetectedIso(iso, identity, 1.0, "filename"),
+        ReleaseArtifact(
+            "2",
+            None,
+            "arch-2.iso",
+            "https://example.test/arch-2.iso?token=secret",
+            1,
+            "sha256",
+            "a" * 64,
+            None,
+            (),
+            frozenset({"example.test"}),
+            identity,
+        ),
+        UpdateAction.SKIP,
+        2,
+        1,
+        VerificationLevel.CHECKSUM,
+        blocking_errors=("blocked for test",),
+    )
+
+    async def exercise() -> None:
+        app = VentoyDepotApp()
+        async with app.run_test() as pilot:
+            app.row_items = [item]
+            app._render_plan()
+            await pilot.pause()
+            details = str(app.query_one("#iso-details", Static).content)
+            assert str(iso) in details
+            assert "SHA256" in details
+            assert "blocked for test" in details
+            assert "token=secret" not in details
+            assert "query hidden" in details
+
+    asyncio.run(exercise())
+
+
+def test_display_url_removes_fragment_and_query_values() -> None:
+    assert _display_url("https://example.test/file.iso?token=secret#fragment") == (
+        "https://example.test/file.iso?[query hidden]"
+    )
 
 
 def test_replace_action_is_explicit_and_selects_the_row(monkeypatch, tmp_path: Path) -> None:

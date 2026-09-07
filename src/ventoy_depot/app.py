@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from functools import partial
 from pathlib import Path
 from threading import Event
+from urllib.parse import urlsplit, urlunsplit
 
 from rich.text import Text
 from textual import work
@@ -752,6 +753,7 @@ class VentoyDepotApp(App[None]):
     #progress { margin: 1 0; }
     #actions { height: auto; overflow-x: auto; }
     DataTable { height: 1fr; min-height: 12; }
+    #iso-details { height: 7; padding: 0 1; overflow-y: auto; }
     Button { margin-right: 1; }
     """
     TITLE = "Ventoy Depot"
@@ -815,6 +817,7 @@ class VentoyDepotApp(App[None]):
                 yield Button(translate("settings", self.language), id="settings")
             yield ProgressBar(total=100, show_eta=True, id="progress")
             yield DataTable(id="isos", cursor_type="row", zebra_stripes=True)
+            yield Static("", id="iso-details")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -846,6 +849,7 @@ class VentoyDepotApp(App[None]):
         self.selected_paths.clear()
         self.failed_paths.clear()
         self.query_one("#isos", DataTable).clear()
+        self.query_one("#iso-details", Static).update("")
         if device is None:
             self.query_one("#device-card", Static).update("")
             return
@@ -889,6 +893,9 @@ class VentoyDepotApp(App[None]):
     def on_data_table_row_selected(self, _event: DataTable.RowSelected) -> None:
         self.action_toggle_selection()
 
+    def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
+        self._render_details(event.cursor_row)
+
     def action_refresh(self) -> None:
         if self.operation_running:
             return
@@ -912,6 +919,7 @@ class VentoyDepotApp(App[None]):
         self.query_one("#empty-trash", Button).disabled = True
         self.query_one("#device-card", Static).update("")
         self.query_one("#isos", DataTable).clear()
+        self.query_one("#iso-details", Static).update("")
         self.query_one("#device", Select).set_options(
             [(item.display_name, item.identifier) for item in devices]
         )
@@ -1108,6 +1116,9 @@ class VentoyDepotApp(App[None]):
             )
         if self.row_items:
             table.move_cursor(row=min(cursor_row, len(self.row_items) - 1), scroll=False)
+            self._render_details(min(cursor_row, len(self.row_items) - 1))
+        else:
+            self.query_one("#iso-details", Static).update("")
         self.query_one("#update", Button).disabled = not self.selected_paths
         self.query_one("#replace", Button).disabled = not any(
             item.replacement_allowed for item in self.row_items
@@ -1120,6 +1131,39 @@ class VentoyDepotApp(App[None]):
             and item.local.identity.provider_id in {"windows-10", "windows-11", "windows-server"}
             for item in self.row_items
         )
+
+    def _render_details(self, row: int) -> None:
+        if row < 0 or row >= len(self.row_items):
+            self.query_one("#iso-details", Static).update("")
+            return
+        item = self.row_items[row]
+        identity = item.local.identity
+        provider = identity.provider_id if identity is not None else "unknown"
+        lines = [
+            translate("details", self.language),
+            f"{translate('local_path', self.language)}: {item.local.path}",
+            f"{translate('provider_origin', self.language)}: "
+            f"{provider} ({item.local.detection_source})",
+        ]
+        target = item.target
+        if target is not None:
+            lines.append(
+                f"{translate('official_source', self.language)}: "
+                f"{_display_url(target.download_url)}"
+            )
+            lines.append(
+                f"{translate('checksum', self.language)}: "
+                f"{target.checksum_algorithm.upper()} {target.checksum}"
+            )
+            if target.signer_fingerprints:
+                lines.append(
+                    f"{translate('signature', self.language)}: "
+                    + ", ".join(target.signer_fingerprints)
+                )
+        messages = (*item.blocking_errors, *item.warnings)
+        if messages:
+            lines.append(f"{translate('warnings', self.language)}: " + "; ".join(messages))
+        self.query_one("#iso-details", Static).update(Text("\n".join(lines)))
 
     def action_toggle_selection(self) -> None:
         if self.operation_running:
@@ -1505,3 +1549,9 @@ def _write_report(device: Device, report: RunReport) -> Path:
     path = report_dir / f"{stamp}-{report.plan_id}.json"
     report.write(path)
     return path
+
+
+def _display_url(url: str) -> str:
+    parsed = urlsplit(url)
+    query = "[query hidden]" if parsed.query else ""
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, query, ""))
