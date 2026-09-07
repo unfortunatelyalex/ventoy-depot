@@ -74,6 +74,7 @@ BUILTIN_RESOLVER_IDS = frozenset(
         "void-linux",
         "mageia",
         "centos-stream",
+        "bunsenlabs",
     }
 )
 
@@ -143,6 +144,7 @@ def resolve_release(provider_id: str, identity: IsoIdentity) -> ReleaseArtifact:
         "void-linux": _void_linux,
         "mageia": _mageia,
         "centos-stream": _centos_stream,
+        "bunsenlabs": _bunsenlabs,
     }
     try:
         resolver = resolvers[provider_id]
@@ -2532,4 +2534,43 @@ def _centos_stream(identity: IsoIdentity) -> ReleaseArtifact:
         "sha256",
         _checksum(sums, filename, "sha256"),
         {host},
+    )
+
+
+def _bunsenlabs(identity: IsoIdentity) -> ReleaseArtifact:
+    if identity.product_id != "bunsenlabs" or identity.edition != "desktop":
+        raise ProviderError("This BunsenLabs edition is not supported.")
+    if identity.architecture != "amd64" or identity.channel != "stable":
+        raise ProviderError("BunsenLabs automatic updates support stable AMD64 media only.")
+    hosts = {"www.bunsenlabs.org", "ddl.bunsenlabs.org"}
+    client = SafeHttpClient(frozenset(hosts))
+    page = _text(client, "https://www.bunsenlabs.org/installation.html")
+    matches = list(
+        re.finditer(
+            r"\b(?P<filename>[a-z]+-(?P<version>\d+)-(?P<build>\d{6})-"
+            r"amd64\.hybrid\.iso)\b",
+            page,
+            re.IGNORECASE,
+        )
+    )
+    if not matches:
+        raise ProviderError("The official BunsenLabs page contains no stable AMD64 ISO.")
+    match = max(
+        matches,
+        key=lambda item: (_version_key(item.group("version")), item.group("build")),
+    )
+    filename = match.group("filename")
+    version = match.group("version")
+    build = match.group("build")
+    base = "https://ddl.bunsenlabs.org/ddl/"
+    sums = _text(client, base + "release.sha256.txt")
+    return _artifact(
+        identity,
+        version,
+        filename,
+        base + filename,
+        "sha256",
+        _checksum(sums, filename, "sha256"),
+        hosts,
+        build=build,
     )

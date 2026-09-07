@@ -1961,4 +1961,20 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
             ("9", "10"),
         ),
     ),
+    FilenameProvider(
+        "bunsenlabs",
+        "BunsenLabs",
+        (
+            FilenameRule(
+                re.compile(
+                    r"[a-z]+-(?P<version>\d+)-(?P<build>\d{6})-"
+                    r"(?P<architecture>amd64)\.hybrid\.iso$",
+                    re.I,
+                ),
+                "bunsenlabs",
+                default_edition="desktop",
+            ),
+        ),
+        ProviderCapabilities(("desktop",), ("amd64",), (), ("stable",)),
+    ),
 )

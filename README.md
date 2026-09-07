@@ -54,7 +54,7 @@ product, language, architecture, edition and channel match the existing ISO, the
 same confirmation and transactional transfer pipeline as other updates.
 
 Automatic official resolution currently covers Adélie Linux, Arch Linux, Artix Linux,
-BackBox Linux, Ubuntu, Kubuntu, Lubuntu,
+BackBox Linux, BunsenLabs, Ubuntu, Kubuntu, Lubuntu,
 Xubuntu, Ubuntu Budgie, Ubuntu Unity, Ubuntu MATE, Ubuntu Cinnamon, Edubuntu,
 Ubuntu Studio, Ubuntu Kylin, Debian, Devuan, Fedora
 Workstation/Server/KDE, Fedora CoreOS, Flatcar Container Linux, Alpine Linux, Chimera Linux, Rocky Linux, AlmaLinux, Oracle Linux, CentOS Stream,

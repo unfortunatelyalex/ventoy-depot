@@ -214,6 +214,7 @@ from ventoy_depot.providers.builtin import BUILTIN_PROVIDERS
             "dvd1",
             "aarch64",
         ),
+        ("carbon-1-260211-amd64.hybrid.iso", "bunsenlabs", "desktop", "amd64"),
     ],
 )
 def test_variant_preserving_detection(

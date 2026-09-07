@@ -2267,3 +2267,34 @@ def test_ubuntu_flavor_resolver_preserves_product_and_lts_channel(monkeypatch) -
     assert artifact.checksum == digest
     assert artifact.identity is not None
     assert artifact.identity.variant_key() == installed.variant_key()
+
+
+def test_bunsenlabs_resolver_uses_official_sha256_and_preserves_variant(monkeypatch) -> None:
+    filename = "carbon-1-260211-amd64.hybrid.iso"
+    digest = "d" * 64
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, requested: str) -> bytes:
+            if requested == "https://www.bunsenlabs.org/installation.html":
+                return (
+                    f'<a href="https://ddl.bunsenlabs.org/ddl/{filename}">{filename}</a>'.encode()
+                )
+            assert requested == "https://ddl.bunsenlabs.org/ddl/release.sha256.txt"
+            return f"{digest}  {filename}\n".encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "bunsenlabs", "bunsenlabs", "desktop", None, "stable", "amd64", None, "1", "250101"
+    )
+
+    artifact = resolvers.resolve_release("bunsenlabs", installed)
+
+    assert artifact.filename == filename
+    assert artifact.version == "1"
+    assert artifact.build == "260211"
+    assert artifact.checksum == digest
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()
