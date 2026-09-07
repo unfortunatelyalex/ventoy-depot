@@ -163,6 +163,7 @@ def _doctor_identity(provider: Provider) -> IsoIdentity:
     if not products or not capabilities.architectures or not capabilities.channels:
         raise ProviderError("Provider does not declare a probeable product identity.")
     flavor_defaults = {
+        "artix-linux": "dinit",
         "fedora": "live",
         "manjaro": "full",
         "rescuezilla": capabilities.flavors[-1] if capabilities.flavors else None,

@@ -13,6 +13,13 @@ from ventoy_depot.providers.builtin import BUILTIN_PROVIDERS
     ("filename", "provider", "edition", "architecture"),
     [
         ("ubuntu-24.04.3-live-server-amd64.iso", "ubuntu", "live-server", "amd64"),
+        ("artix-base-openrc-20260813-x86_64.iso", "artix-linux", "base", "x86_64"),
+        (
+            "artix-stable-plasma-dinit-20260813-x86_64.iso",
+            "artix-linux",
+            "plasma",
+            "x86_64",
+        ),
         ("kubuntu-26.04.1-desktop-amd64.iso", "ubuntu-flavors", "desktop", "amd64"),
         ("lubuntu-25.10-desktop-amd64.iso", "ubuntu-flavors", "desktop", "amd64"),
         ("xubuntu-24.04.4-desktop-amd64.iso", "ubuntu-flavors", "desktop", "amd64"),
@@ -183,6 +190,10 @@ def test_variant_preserving_detection(
 
 def test_unknown_filename_is_not_guessed() -> None:
     assert identify_iso(Path("renamed.iso")).identity is None
+
+
+def test_artix_weekly_filename_is_not_silently_assigned_to_stable() -> None:
+    assert identify_iso(Path("artix-base-openrc-20260903-x86_64.iso")).identity is None
 
 
 def test_openbsd_official_name_requires_matching_volume_id(tmp_path: Path) -> None:

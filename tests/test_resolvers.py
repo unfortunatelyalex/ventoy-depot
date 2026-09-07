@@ -150,6 +150,47 @@ def test_endeavouros_resolver_uses_current_download_page(monkeypatch) -> None:
     assert artifact.checksum == digest
 
 
+def test_artix_resolver_uses_only_stable_variant_and_normalizes_target_name(monkeypatch) -> None:
+    upstream_name = "artix-plasma-openrc-20260813-x86_64.iso"
+    url = f"https://mirror3.artixlinux.org/iso/{upstream_name}"
+    weekly = "artix-plasma-openrc-20260903-x86_64.iso"
+    digest = "a" * 64
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, requested: str) -> bytes:
+            assert requested == "https://iso.artixlinux.org/iso/"
+            return (
+                f'<a href="{url}">{upstream_name}</a>\n'
+                f'<a href="https://download.artixlinux.org/weekly-iso/{weekly}">{weekly}</a>\n'
+                f"{digest}  {upstream_name}\n"
+            ).encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "artix-linux",
+        "artix-linux",
+        "plasma",
+        "openrc",
+        "stable",
+        "x86_64",
+        None,
+        "20250101",
+        None,
+    )
+
+    artifact = resolvers.resolve_release("artix-linux", installed)
+
+    assert artifact.version == "20260813"
+    assert artifact.filename == "artix-stable-plasma-openrc-20260813-x86_64.iso"
+    assert artifact.download_url == url
+    assert artifact.checksum == digest
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()
+
+
 @pytest.mark.parametrize("edition", ["netinstall", "desktop-live"])
 def test_devuan_resolver_preserves_installer_or_live_medium(monkeypatch, edition: str) -> None:
     filename = f"devuan_excalibur_6.1.1_amd64_{edition}.iso"

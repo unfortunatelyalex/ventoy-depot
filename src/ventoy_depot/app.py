@@ -252,6 +252,7 @@ _ASSIGNMENT_PROFILES = (
     ("AlmaLinux OS", "almalinux", "almalinux", "x86_64"),
     ("Oracle Linux", "oracle-linux", "oracle-linux", "x86_64"),
     ("Arch Linux", "arch", "archlinux", "x86_64"),
+    ("Artix Linux", "artix-linux", "artix-linux", "x86_64"),
     ("Ubuntu", "ubuntu", "ubuntu", "amd64"),
     ("Kubuntu", "ubuntu-flavors", "kubuntu", "amd64"),
     ("Lubuntu", "ubuntu-flavors", "lubuntu", "amd64"),
@@ -353,6 +354,7 @@ _VOLUME_PROFILE_HINTS = (
     ("DEBIAN", "debian"),
     ("UBUNTU", "ubuntu"),
     ("ARCH", "arch"),
+    ("ARTIX", "artix-linux"),
     ("CHIMERA", "chimera-linux"),
 )
 

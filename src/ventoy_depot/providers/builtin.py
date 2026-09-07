@@ -177,6 +177,76 @@ class OpenBsdProvider(FilenameProvider):
         return DetectedIso(path, identity, 1.0, "filename+iso9660-volume-id", volume_id=volume_id)
 
 
+class ArtixProvider(FilenameProvider):
+    """Keep stable and weekly Artix images distinct despite identical upstream names."""
+
+    _stable_images = (
+        ("base", "dinit", "20260813"),
+        ("base", "openrc", "20260813"),
+        ("base", "runit", "20260813"),
+        ("base", "s6", "20260813"),
+        ("cinnamon", "dinit", "20260814"),
+        ("cinnamon", "openrc", "20260814"),
+        ("community-gtk", "openrc", "20260821"),
+        ("community-qt", "openrc", "20260821"),
+        ("lxqt", "runit", "20260816"),
+        ("mate", "dinit", "20260813"),
+        ("mate", "openrc", "20260813"),
+        ("plasma", "dinit", "20260813"),
+        ("plasma", "openrc", "20260813"),
+        ("xfce", "dinit", "20260813"),
+        ("xfce", "openrc", "20260813"),
+    )
+
+    def __init__(self) -> None:
+        normalized = FilenameRule(
+            re.compile(
+                r"artix-(?P<channel>stable)-"
+                r"(?P<edition>base|cinnamon|community-gtk|community-qt|lxqt|mate|plasma|xfce)-"
+                r"(?P<flavor>dinit|openrc|runit|s6)-(?P<version>\d{8})-"
+                r"(?P<architecture>x86_64)\.iso$",
+                re.I,
+            ),
+            "artix-linux",
+        )
+        upstream = tuple(
+            FilenameRule(
+                re.compile(
+                    rf"artix-{re.escape(edition)}-{re.escape(init)}-"
+                    rf"(?P<version>{date})-x86_64\.iso$",
+                    re.I,
+                ),
+                "artix-linux",
+                default_channel="stable",
+                default_architecture="x86_64",
+                default_edition=edition,
+                default_flavor=init,
+            )
+            for edition, init, date in self._stable_images
+        )
+        super().__init__(
+            "artix-linux",
+            "Artix Linux",
+            (normalized, *upstream),
+            ProviderCapabilities(
+                (
+                    "base",
+                    "cinnamon",
+                    "community-gtk",
+                    "community-qt",
+                    "lxqt",
+                    "mate",
+                    "plasma",
+                    "xfce",
+                ),
+                ("x86_64",),
+                (),
+                ("stable",),
+                ("dinit", "openrc", "runit", "s6"),
+            ),
+        )
+
+
 def _lower(value: str | None) -> str | None:
     return value.lower() if value else None
 
@@ -249,6 +319,7 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
         ),
         ProviderCapabilities((), ("x86_64",), (), ("stable",)),
     ),
+    ArtixProvider(),
     FilenameProvider(
         "alpine",
         "Alpine Linux",

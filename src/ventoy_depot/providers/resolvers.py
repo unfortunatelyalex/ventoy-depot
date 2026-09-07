@@ -12,6 +12,7 @@ from .base import ProviderError
 BUILTIN_RESOLVER_IDS = frozenset(
     {
         "arch",
+        "artix-linux",
         "alpine",
         "chimera-linux",
         "rocky-linux",
@@ -71,6 +72,7 @@ BUILTIN_RESOLVER_IDS = frozenset(
 def resolve_release(provider_id: str, identity: IsoIdentity) -> ReleaseArtifact:
     resolvers = {
         "arch": _arch,
+        "artix-linux": _artix_linux,
         "alpine": _alpine,
         "chimera-linux": _chimera_linux,
         "rocky-linux": _rocky_linux,
@@ -210,6 +212,58 @@ def _arch(identity: IsoIdentity) -> ReleaseArtifact:
         "sha256",
         _checksum(sums, filename, "sha256"),
         {"geo.mirror.pkgbuild.com"},
+    )
+
+
+def _artix_linux(identity: IsoIdentity) -> ReleaseArtifact:
+    editions = {
+        "base",
+        "cinnamon",
+        "community-gtk",
+        "community-qt",
+        "lxqt",
+        "mate",
+        "plasma",
+        "xfce",
+    }
+    flavors = {"dinit", "openrc", "runit", "s6"}
+    if (
+        identity.channel != "stable"
+        or identity.architecture != "x86_64"
+        or identity.edition not in editions
+        or identity.flavor not in flavors
+    ):
+        raise ProviderError("This Artix edition, init system or channel is not supported.")
+    hosts = {
+        "artixlinux.org",
+        "iso.artixlinux.org",
+        "download.artixlinux.org",
+        "mirror3.artixlinux.org",
+    }
+    client = SafeHttpClient(frozenset(hosts))
+    page_url = "https://iso.artixlinux.org/iso/"
+    page = _text(client, page_url)
+    expression = re.compile(
+        rf"(?P<url>https://(?:download|mirror3)\.artixlinux\.org/iso/"
+        rf"(?P<filename>artix-{re.escape(identity.edition)}-"
+        rf"{re.escape(identity.flavor)}-(?P<version>\d{{8}})-x86_64\.iso))\b",
+        re.IGNORECASE,
+    )
+    matches = list(expression.finditer(page))
+    if not matches:
+        raise ProviderError("The Artix stable page lacks this edition and init-system pair.")
+    match = max(matches, key=lambda item: _version_key(item.group("version")))
+    upstream_name, version = match.group("filename"), match.group("version")
+    checksum = _checksum(page, upstream_name, "sha256")
+    filename = f"artix-stable-{identity.edition}-{identity.flavor}-{version}-x86_64.iso"
+    return _artifact(
+        identity,
+        version,
+        filename,
+        match.group("url"),
+        "sha256",
+        checksum,
+        hosts,
     )
 
 

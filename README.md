@@ -53,7 +53,7 @@ Microsoft HTTPS hosts or a regular local file outside the Ventoy drive, and a fi
 product, language, architecture, edition and channel match the existing ISO, then uses the
 same confirmation and transactional transfer pipeline as other updates.
 
-Automatic official resolution currently covers Arch Linux, Ubuntu, Kubuntu, Lubuntu,
+Automatic official resolution currently covers Arch Linux, Artix Linux, Ubuntu, Kubuntu, Lubuntu,
 Xubuntu, Ubuntu Budgie, Ubuntu Unity, Ubuntu MATE, Ubuntu Cinnamon, Edubuntu,
 Ubuntu Studio, Ubuntu Kylin, Debian, Devuan, Fedora
 Workstation/Server/KDE, Alpine Linux, Chimera Linux, Rocky Linux, AlmaLinux, Oracle Linux, CentOS Stream,
