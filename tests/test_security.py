@@ -211,3 +211,21 @@ def test_bundled_schema_matches_registry_contract() -> None:
         schema["$defs"]["signature"]["properties"]["signer_fingerprints"]["items"]["pattern"]
         == "^(?:[A-Fa-f0-9]{40}|[A-Fa-f0-9]{64})$"
     )
+
+
+def test_detection_only_manifest_may_omit_release_sources(tmp_path: Path) -> None:
+    value = manifest()
+    value["release_sources"] = []
+    value["detection"][0]["downloadable"] = False  # type: ignore[index]
+
+    loaded = load_and_validate_manifest(write_manifest(tmp_path, value))
+
+    assert loaded["release_sources"] == []
+
+
+def test_downloadable_manifest_cannot_omit_release_sources(tmp_path: Path) -> None:
+    value = manifest()
+    value["release_sources"] = []
+
+    with pytest.raises(SecurityError, match="requires a release source"):
+        load_and_validate_manifest(write_manifest(tmp_path, value))

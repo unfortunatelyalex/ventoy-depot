@@ -227,8 +227,8 @@ def _validate_registry_shape(payload: dict[str, Any]) -> None:
             raise SecurityError(f"Manifest capability {dimension} must not be empty.")
 
     sources = payload["release_sources"]
-    if not isinstance(sources, list) or not 1 <= len(sources) <= 40:
-        raise SecurityError("Manifest must contain 1-40 release sources.")
+    if not isinstance(sources, list) or len(sources) > 40:
+        raise SecurityError("Manifest must contain at most 40 release sources.")
     for value in sources:
         source = _object(value, "release source")
         required = {
@@ -323,6 +323,9 @@ def _validate_registry_shape(payload: dict[str, Any]) -> None:
                 raise SecurityError("Manifest volume detection regex must be a non-empty string.")
             expressions.append(rule["volume_regex"])
         _validate_identity(rule["identity"], capabilities, *expressions)
+
+    if not sources and any(rule["downloadable"] for rule in detection):
+        raise SecurityError("A downloadable detection rule requires a release source.")
 
     if "notes" in payload:
         notes = _string_list(payload["notes"], "notes", allow_empty=True)

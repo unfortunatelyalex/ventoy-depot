@@ -986,6 +986,27 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
         ProviderCapabilities(("live",), ("amd64",), (), ("stable",)),
     ),
     FilenameProvider(
+        "super-grub2-disk",
+        "Super Grub2 Disk",
+        (
+            FilenameRule(
+                re.compile(
+                    r"supergrub2-classic-(?P<version>\d+\.\d+s\d+)-"
+                    r"(?P<edition>multiarch|i386_pc|x86_64_efi|i386_efi)-CD\.iso$",
+                    re.I,
+                ),
+                "super-grub2-disk",
+                default_architecture="multiarch",
+            ),
+        ),
+        ProviderCapabilities(
+            ("multiarch", "i386_pc", "x86_64_efi", "i386_efi"),
+            ("multiarch",),
+            (),
+            ("stable",),
+        ),
+    ),
+    FilenameProvider(
         "opensuse-tumbleweed",
         "openSUSE Tumbleweed",
         (
@@ -1779,6 +1800,139 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
             (),
             ("stable",),
         ),
+    ),
+    FilenameProvider(
+        "flatcar",
+        "Flatcar Container Linux",
+        (
+            FilenameRule(
+                re.compile(
+                    r"flatcar-(?P<channel>stable|beta|alpha|lts)-"
+                    r"(?P<version>\d+(?:\.\d+)+)-(?P<architecture>amd64)\.iso$",
+                    re.I,
+                ),
+                "flatcar",
+                default_edition="live-iso",
+            ),
+        ),
+        ProviderCapabilities(("live-iso",), ("amd64",), (), ("stable", "beta", "alpha", "lts")),
+    ),
+    FilenameProvider(
+        "fedora-coreos",
+        "Fedora CoreOS",
+        (
+            FilenameRule(
+                re.compile(
+                    r"fedora-coreos-(?P<channel>stable|testing|next)-"
+                    r"(?P<version>\d+\.\d+\.\d+\.\d+)-live-iso\."
+                    r"(?P<architecture>x86_64|aarch64)\.iso$",
+                    re.I,
+                ),
+                "fedora-coreos",
+                default_edition="live-iso",
+            ),
+        ),
+        ProviderCapabilities(
+            ("live-iso",), ("x86_64", "aarch64"), (), ("stable", "testing", "next")
+        ),
+    ),
+    FilenameProvider(
+        "harvester",
+        "Harvester HCI",
+        (
+            FilenameRule(
+                re.compile(
+                    r"harvester-v(?P<version>\d+(?:\.\d+)+)-"
+                    r"(?P<architecture>amd64|arm64)\.iso$",
+                    re.I,
+                ),
+                "harvester",
+                default_edition="full",
+            ),
+            FilenameRule(
+                re.compile(
+                    r"harvester-v(?P<version>\d+(?:\.\d+)+)-"
+                    r"(?P<architecture>amd64)-net-install\.iso$",
+                    re.I,
+                ),
+                "harvester",
+                default_edition="netinstall",
+            ),
+        ),
+        ProviderCapabilities(("full", "netinstall"), ("amd64", "arm64"), (), ("stable",)),
+    ),
+    FilenameProvider(
+        "ipfire",
+        "IPFire",
+        (
+            FilenameRule(
+                re.compile(
+                    r"ipfire-(?P<version>\d+(?:\.\d+)+)-core(?P<build>\d+)-"
+                    r"(?P<architecture>x86_64|aarch64)\.iso$",
+                    re.I,
+                ),
+                "ipfire",
+                default_edition="installer",
+            ),
+        ),
+        ProviderCapabilities(("installer",), ("x86_64", "aarch64"), (), ("stable",)),
+    ),
+    FilenameProvider(
+        "opnsense",
+        "OPNsense",
+        (
+            FilenameRule(
+                re.compile(
+                    r"OPNsense-(?P<version>\d+(?:\.\d+)+)-(?:OpenSSL-)?"
+                    r"(?P<edition>dvd|cdrom)-(?P<architecture>amd64)\.iso$",
+                    re.I,
+                ),
+                "opnsense",
+            ),
+        ),
+        ProviderCapabilities(("dvd", "cdrom"), ("amd64",), (), ("stable",)),
+    ),
+    FilenameProvider(
+        "pfsense-ce",
+        "pfSense Community Edition",
+        (
+            FilenameRule(
+                re.compile(
+                    r"pfSense-CE-(?P<version>\d+(?:\.\d+)+)-RELEASE-"
+                    r"(?P<architecture>amd64)\.iso$",
+                    re.I,
+                ),
+                "pfsense-ce",
+                default_edition="dvd",
+            ),
+        ),
+        ProviderCapabilities(("dvd",), ("amd64",), (), ("stable",)),
+    ),
+    FilenameProvider(
+        "redo-rescue",
+        "Redo Rescue",
+        (
+            FilenameRule(
+                re.compile(r"redorescue-(?P<version>\d+(?:\.\d+)+)\.iso$", re.I),
+                "redo-rescue",
+                default_edition="live",
+                default_architecture="amd64",
+            ),
+        ),
+        ProviderCapabilities(("live",), ("amd64",), (), ("stable",)),
+    ),
+    FilenameProvider(
+        "ultimate-boot-cd",
+        "Ultimate Boot CD",
+        (
+            FilenameRule(
+                re.compile(r"ubcd(?P<version>\d{3,})\.iso$", re.I),
+                "ultimate-boot-cd",
+                default_edition="diagnostics",
+                default_architecture="x86",
+            ),
+        ),
+        ProviderCapabilities(("diagnostics",), ("x86",), (), ("stable",)),
     ),
     FilenameProvider(
         "centos-stream",

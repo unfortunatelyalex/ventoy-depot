@@ -607,6 +607,96 @@ def test_fedora_resolver_supports_official_spins_and_silverblue(
     assert artifact.identity.variant_key() == installed.variant_key()
 
 
+@pytest.mark.parametrize("channel", ["stable", "testing", "next"])
+@pytest.mark.parametrize("architecture", ["x86_64", "aarch64"])
+def test_fedora_coreos_resolver_preserves_stream_and_architecture(
+    monkeypatch, channel: str, architecture: str
+) -> None:
+    version = "44.20260817.3.2"
+    upstream_name = f"fedora-coreos-{version}-live-iso.{architecture}.iso"
+    url = (
+        "https://builds.coreos.fedoraproject.org/prod/streams/"
+        f"{channel}/builds/{version}/{architecture}/{upstream_name}"
+    )
+    digest = "d" * 64
+    payload = {
+        "architectures": {
+            architecture: {
+                "artifacts": {
+                    "metal": {
+                        "release": version,
+                        "formats": {"iso": {"disk": {"location": url, "sha256": digest}}},
+                    }
+                }
+            }
+        }
+    }
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, requested: str) -> bytes:
+            assert requested == f"https://builds.coreos.fedoraproject.org/streams/{channel}.json"
+            return json.dumps(payload).encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "fedora-coreos",
+        "fedora-coreos",
+        "live-iso",
+        None,
+        channel,
+        architecture,
+        None,
+        "43.20250101.3.0",
+        None,
+    )
+
+    artifact = resolvers.resolve_release("fedora-coreos", installed)
+
+    assert artifact.version == version
+    assert artifact.filename == (f"fedora-coreos-{channel}-{version}-live-iso.{architecture}.iso")
+    assert artifact.download_url == url
+    assert artifact.checksum == digest
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()
+
+
+@pytest.mark.parametrize("channel", ["stable", "beta", "alpha", "lts"])
+def test_flatcar_resolver_preserves_channel_and_uses_sha512(monkeypatch, channel: str) -> None:
+    version = "4593.2.5"
+    upstream_name = "flatcar_production_iso_image.iso"
+    root = f"https://{channel}.release.flatcar-linux.net/amd64-usr/"
+    base = f"{root}{version}/"
+    digest = "f" * 128
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, requested: str) -> bytes:
+            if requested == root + "current/version.txt":
+                return f"FLATCAR_VERSION_ID={version}\n".encode()
+            assert requested == base + upstream_name + ".DIGESTS"
+            return f"# SHA512 HASH\n{digest}  {upstream_name}\n".encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "flatcar", "flatcar", "live-iso", None, channel, "amd64", None, "4000.2.0", None
+    )
+
+    artifact = resolvers.resolve_release("flatcar", installed)
+
+    assert artifact.version == version
+    assert artifact.filename == f"flatcar-{channel}-{version}-amd64.iso"
+    assert artifact.download_url == base + upstream_name
+    assert artifact.checksum_algorithm == "sha512"
+    assert artifact.checksum == digest
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()
+
+
 def test_gparted_resolver_uses_official_sha256_list(monkeypatch) -> None:
     filename = "gparted-live-1.8.1-6-amd64.iso"
     digest = "c" * 64
@@ -1214,6 +1304,90 @@ def test_haiku_resolver_uses_official_page_checksum_and_cdn(monkeypatch) -> None
     assert artifact.identity.variant_key() == installed.variant_key()
 
 
+@pytest.mark.parametrize(
+    ("edition", "architecture", "suffix"),
+    [("full", "amd64", ""), ("full", "arm64", ""), ("netinstall", "amd64", "-net-install")],
+)
+def test_harvester_resolver_uses_highest_formal_release_and_sha512(
+    monkeypatch, edition: str, architecture: str, suffix: str
+) -> None:
+    version = "1.8.2"
+    filename = f"harvester-v{version}-{architecture}{suffix}.iso"
+    base = f"https://releases.rancher.com/harvester/v{version}/"
+    sums_url = base + f"harvester-v{version}-{architecture}.sha512"
+    digest = "e" * 128
+    payload = [
+        {
+            "tag_name": "v1.9.0-rc1",
+            "draft": False,
+            "prerelease": True,
+            "body": "ignored",
+        },
+        {
+            "tag_name": f"v{version}",
+            "draft": False,
+            "prerelease": False,
+            "body": f"{base}{filename}\n{sums_url}",
+        },
+        {
+            "tag_name": "v1.7.3",
+            "draft": False,
+            "prerelease": False,
+            "body": "older",
+        },
+    ]
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, requested: str) -> bytes:
+            if requested.startswith("https://api.github.com/"):
+                return json.dumps(payload).encode()
+            assert requested == sums_url
+            return f"{digest}  {filename}\n".encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "harvester",
+        "harvester",
+        edition,
+        None,
+        "stable",
+        architecture,
+        None,
+        "1.7.3",
+        None,
+    )
+
+    artifact = resolvers.resolve_release("harvester", installed)
+
+    assert artifact.version == version
+    assert artifact.filename == filename
+    assert artifact.download_url == base + filename
+    assert artifact.checksum_algorithm == "sha512"
+    assert artifact.checksum == digest
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()
+
+
+def test_harvester_resolver_rejects_nonexistent_arm64_netinstall() -> None:
+    installed = IsoIdentity(
+        "harvester",
+        "harvester",
+        "netinstall",
+        None,
+        "stable",
+        "arm64",
+        None,
+        "1.8.1",
+        None,
+    )
+
+    with pytest.raises(resolvers.ProviderError, match="AMD64 only"):
+        resolvers.resolve_release("harvester", installed)
+
+
 def test_solus_resolver_preserves_desktop_and_uses_sidecar(monkeypatch) -> None:
     filename = "Solus-Plasma-Release-2026-04-18.iso"
     digest = "d" * 64
@@ -1706,6 +1880,45 @@ def test_systemrescue_resolver_uses_official_sidecar(monkeypatch) -> None:
 
     assert artifact.filename == filename
     assert artifact.checksum == digest
+
+
+@pytest.mark.parametrize("edition", ["multiarch", "i386_pc", "x86_64_efi", "i386_efi"])
+def test_super_grub2_resolver_preserves_cd_variant_and_uses_official_sha256(
+    monkeypatch, edition: str
+) -> None:
+    version = "2.06s4"
+    filename = f"supergrub2-classic-{version}-{edition}-CD.iso"
+    digest = "9" * 64
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, requested: str) -> bytes:
+            assert requested == "https://www.supergrubdisk.org/"
+            return f"{digest}  ./super_grub2_disk_{version}/{filename}\n".encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "super-grub2-disk",
+        "super-grub2-disk",
+        edition,
+        None,
+        "stable",
+        "multiarch",
+        None,
+        "2.06s3",
+        None,
+    )
+
+    artifact = resolvers.resolve_release("super-grub2-disk", installed)
+
+    assert artifact.version == version
+    assert artifact.filename == filename
+    assert artifact.download_url.startswith("https://downloads.sourceforge.net/project/supergrub2/")
+    assert artifact.checksum == digest
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()
 
 
 def test_proxmox_resolver_preserves_product_and_architecture(monkeypatch) -> None:

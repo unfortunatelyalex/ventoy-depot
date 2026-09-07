@@ -25,6 +25,8 @@ BUILTIN_RESOLVER_IDS = frozenset(
         "debian",
         "devuan",
         "fedora",
+        "fedora-coreos",
+        "flatcar",
         "linux-mint",
         "endeavouros",
         "cachyos",
@@ -38,6 +40,7 @@ BUILTIN_RESOLVER_IDS = frozenset(
         "nixos",
         "nobara",
         "systemrescue",
+        "super-grub2-disk",
         "opensuse-tumbleweed",
         "opensuse-leap",
         "freebsd",
@@ -60,6 +63,7 @@ BUILTIN_RESOLVER_IDS = frozenset(
         "porteux",
         "ghostbsd",
         "haiku",
+        "harvester",
         "solus",
         "truenas",
         "tuxedo-os",
@@ -90,6 +94,8 @@ def resolve_release(provider_id: str, identity: IsoIdentity) -> ReleaseArtifact:
         "debian": _debian,
         "devuan": _devuan,
         "fedora": _fedora,
+        "fedora-coreos": _fedora_coreos,
+        "flatcar": _flatcar,
         "linux-mint": _linux_mint,
         "endeavouros": _endeavouros,
         "cachyos": _cachyos,
@@ -103,6 +109,7 @@ def resolve_release(provider_id: str, identity: IsoIdentity) -> ReleaseArtifact:
         "nixos": _nixos,
         "nobara": _nobara,
         "systemrescue": _systemrescue,
+        "super-grub2-disk": _super_grub2_disk,
         "opensuse-tumbleweed": _opensuse_tumbleweed,
         "opensuse-leap": _opensuse_leap,
         "freebsd": _freebsd,
@@ -125,6 +132,7 @@ def resolve_release(provider_id: str, identity: IsoIdentity) -> ReleaseArtifact:
         "porteux": _porteux,
         "ghostbsd": _ghostbsd,
         "haiku": _haiku,
+        "harvester": _harvester,
         "solus": _solus,
         "truenas": _truenas,
         "tuxedo-os": _tuxedo_os,
@@ -690,6 +698,77 @@ def _fedora(identity: IsoIdentity) -> ReleaseArtifact:
     )
 
 
+def _fedora_coreos(identity: IsoIdentity) -> ReleaseArtifact:
+    if identity.product_id != "fedora-coreos" or identity.edition != "live-iso":
+        raise ProviderError("Only Fedora CoreOS live ISOs are supported.")
+    if identity.architecture not in {"x86_64", "aarch64"}:
+        raise ProviderError("This Fedora CoreOS architecture is not supported.")
+    if identity.channel not in {"stable", "testing", "next"}:
+        raise ProviderError("This Fedora CoreOS release stream is not supported.")
+    host = "builds.coreos.fedoraproject.org"
+    client = SafeHttpClient(frozenset({host}))
+    metadata_url = f"https://{host}/streams/{identity.channel}.json"
+    payload = json.loads(_text(client, metadata_url))
+    try:
+        metal = payload["architectures"][identity.architecture]["artifacts"]["metal"]
+        version = str(metal["release"])
+        disk = metal["formats"]["iso"]["disk"]
+        url = str(disk["location"])
+        checksum = str(disk["sha256"]).lower()
+    except (KeyError, TypeError) as error:
+        raise ProviderError("The Fedora CoreOS stream lacks the selected live ISO.") from error
+    upstream_name = url.rsplit("/", 1)[-1]
+    expected_name = f"fedora-coreos-{version}-live-iso.{identity.architecture}.iso"
+    if upstream_name != expected_name or not re.fullmatch(r"[a-f0-9]{64}", checksum):
+        raise ProviderError("The Fedora CoreOS stream returned invalid ISO metadata.")
+    target_name = f"fedora-coreos-{identity.channel}-{version}-live-iso.{identity.architecture}.iso"
+    return _artifact(
+        identity,
+        version,
+        target_name,
+        url,
+        "sha256",
+        checksum,
+        {host},
+    )
+
+
+def _flatcar(identity: IsoIdentity) -> ReleaseArtifact:
+    if identity.product_id != "flatcar" or identity.edition != "live-iso":
+        raise ProviderError("Only Flatcar Container Linux live ISOs are supported.")
+    if identity.architecture != "amd64" or identity.channel not in {
+        "stable",
+        "beta",
+        "alpha",
+        "lts",
+    }:
+        raise ProviderError("This Flatcar architecture or release channel is unsupported.")
+    host = f"{identity.channel}.release.flatcar-linux.net"
+    hosts = {host, "flatcar.cdn.cncf.io"}
+    client = SafeHttpClient(frozenset(hosts))
+    root = f"https://{host}/amd64-usr/"
+    version_text = _text(client, root + "current/version.txt")
+    version_match = re.search(
+        r"^FLATCAR_VERSION_ID=(?P<version>\d+(?:\.\d+)+)$", version_text, re.M
+    )
+    if version_match is None:
+        raise ProviderError("The official Flatcar metadata lacks a release version.")
+    version = version_match.group("version")
+    upstream_name = "flatcar_production_iso_image.iso"
+    base = f"{root}{version}/"
+    sums = _text(client, base + upstream_name + ".DIGESTS")
+    target_name = f"flatcar-{identity.channel}-{version}-amd64.iso"
+    return _artifact(
+        identity,
+        version,
+        target_name,
+        base + upstream_name,
+        "sha512",
+        _checksum(sums, upstream_name, "sha512"),
+        hosts,
+    )
+
+
 def _linux_mint(identity: IsoIdentity) -> ReleaseArtifact:
     if identity.flavor == "edge":
         raise ProviderError(
@@ -1140,6 +1219,41 @@ def _systemrescue(identity: IsoIdentity) -> ReleaseArtifact:
     checksum_base = f"https://www.system-rescue.org/releases/{version}/"
     checksum = _checksum(_text(client, checksum_base + filename + ".sha256"), filename, "sha256")
     url = f"https://fastly-cdn.system-rescue.org/releases/{version}/{filename}"
+    return _artifact(identity, version, filename, url, "sha256", checksum, hosts)
+
+
+def _super_grub2_disk(identity: IsoIdentity) -> ReleaseArtifact:
+    editions = {"multiarch", "i386_pc", "x86_64_efi", "i386_efi"}
+    if (
+        identity.product_id != "super-grub2-disk"
+        or identity.edition not in editions
+        or identity.architecture != "multiarch"
+        or identity.channel != "stable"
+    ):
+        raise ProviderError("This Super Grub2 Disk CD variant is not supported.")
+    hosts = {
+        "www.supergrubdisk.org",
+        "downloads.sourceforge.net",
+        "sf-eu-introserv-3.dl.sourceforge.net",
+    }
+    client = SafeHttpClient(frozenset(hosts))
+    page = _text(client, "https://www.supergrubdisk.org/")
+    expression = re.compile(
+        rf"\b(?P<filename>supergrub2-classic-(?P<version>\d+\.\d+s\d+)-"
+        rf"{re.escape(identity.edition)}-CD\.iso)\b",
+        re.IGNORECASE,
+    )
+    matches = list(expression.finditer(page))
+    if not matches:
+        raise ProviderError("The official Super Grub2 Disk page lacks this CD variant.")
+    match = max(matches, key=lambda item: _version_key(item.group("version")))
+    filename, version = match.group("filename"), match.group("version")
+    checksum = _checksum(page, filename, "sha256")
+    url = (
+        "https://downloads.sourceforge.net/project/supergrub2/"
+        f"{version}/super_grub2_disk_{version}/{filename}"
+        "?use_mirror=sf-eu-introserv-3"
+    )
     return _artifact(identity, version, filename, url, "sha256", checksum, hosts)
 
 
@@ -2040,6 +2154,50 @@ def _haiku(identity: IsoIdentity) -> ReleaseArtifact:
     checksum = _checksum(page, filename, "sha256")
     url = f"https://haiku-release.cdn.haiku-os.org/{version}/{filename}"
     return _artifact(identity, version, filename, url, "sha256", checksum, hosts)
+
+
+def _harvester(identity: IsoIdentity) -> ReleaseArtifact:
+    if identity.product_id != "harvester" or identity.edition not in {"full", "netinstall"}:
+        raise ProviderError("This Harvester installer medium is not supported.")
+    if identity.architecture not in {"amd64", "arm64"} or identity.channel != "stable":
+        raise ProviderError("This Harvester architecture or release channel is unsupported.")
+    if identity.edition == "netinstall" and identity.architecture != "amd64":
+        raise ProviderError("Harvester net-install media are published for AMD64 only.")
+    hosts = {"api.github.com", "github.com", "releases.rancher.com"}
+    client = SafeHttpClient(frozenset(hosts))
+    payload = json.loads(
+        _text(client, "https://api.github.com/repos/harvester/harvester/releases?per_page=100")
+    )
+    if not isinstance(payload, list):
+        raise ProviderError("The official Harvester release feed is invalid.")
+    releases: list[tuple[str, str]] = []
+    for release in payload:
+        if not isinstance(release, dict) or release.get("draft") or release.get("prerelease"):
+            continue
+        tag = str(release.get("tag_name", ""))
+        if not re.fullmatch(r"v\d+(?:\.\d+)+", tag):
+            continue
+        releases.append((tag.removeprefix("v"), str(release.get("body", ""))))
+    if not releases:
+        raise ProviderError("The official Harvester feed contains no stable release.")
+    version, body = max(releases, key=lambda item: _version_key(item[0]))
+    suffix = "-net-install" if identity.edition == "netinstall" else ""
+    filename = f"harvester-v{version}-{identity.architecture}{suffix}.iso"
+    base = f"https://releases.rancher.com/harvester/v{version}/"
+    url = base + filename
+    sums_url = base + f"harvester-v{version}-{identity.architecture}.sha512"
+    if url not in body or sums_url not in body:
+        raise ProviderError("The Harvester release notes lack this ISO or checksum link.")
+    sums = _text(client, sums_url)
+    return _artifact(
+        identity,
+        version,
+        filename,
+        url,
+        "sha512",
+        _checksum(sums, filename, "sha512"),
+        hosts,
+    )
 
 
 def _solus(identity: IsoIdentity) -> ReleaseArtifact:

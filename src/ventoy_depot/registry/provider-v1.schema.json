@@ -13,7 +13,7 @@
     "driver": {"enum": ["github-releases", "gitlab-releases", "static-json", "directory-index", "checksum-list", "sidecar", "static-html", "latest-redirect"]},
     "allowed_hosts": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "pattern": "^[A-Za-z0-9.-]+$"}},
     "capabilities": {"$ref": "#/$defs/capabilities"},
-    "release_sources": {"type": "array", "minItems": 1, "maxItems": 40, "items": {"$ref": "#/$defs/releaseSource"}},
+    "release_sources": {"type": "array", "minItems": 0, "maxItems": 40, "items": {"$ref": "#/$defs/releaseSource"}},
     "detection": {"type": "array", "minItems": 1, "maxItems": 50, "items": {"$ref": "#/$defs/detectionRule"}},
     "notes": {"type": "array", "items": {"type": "string", "maxLength": 500}}
   },
