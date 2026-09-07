@@ -409,6 +409,18 @@ def test_add_iso_dialog_builds_versionless_explicit_identity(monkeypatch) -> Non
     ]
 
 
+def test_add_iso_dialog_excludes_detection_only_providers(monkeypatch) -> None:
+    monkeypatch.setattr("ventoy_depot.app.discover_ventoy_devices", lambda: [])
+    arch = next(provider for provider in BUILTIN_PROVIDERS if provider.provider_id == "arch")
+    windows = next(
+        provider for provider in BUILTIN_PROVIDERS if provider.provider_id == "windows-11"
+    )
+
+    dialog = AddIsoDialog((windows, arch), "en")
+
+    assert {profile.provider_id for profile in dialog.profiles} == {"arch"}
+
+
 def test_keyboard_refresh_is_ignored_while_operation_runs(monkeypatch) -> None:
     calls = 0
 

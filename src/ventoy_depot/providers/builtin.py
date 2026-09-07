@@ -38,6 +38,12 @@ class FilenameProvider(Provider):
     def products(self) -> tuple[str, ...]:
         return tuple(dict.fromkeys(rule.product_id for rule in self.rules))
 
+    @property
+    def supports_automatic_download(self) -> bool:
+        from .resolvers import BUILTIN_RESOLVER_IDS
+
+        return self.provider_id in BUILTIN_RESOLVER_IDS
+
     def detect(self, path: Path) -> DetectedIso | None:
         for rule in self.rules:
             if match := rule.expression.fullmatch(path.name):

@@ -31,6 +31,11 @@ class Provider(ABC):
     def products(self) -> tuple[str, ...]:
         return ()
 
+    @property
+    def supports_automatic_download(self) -> bool:
+        """Whether this provider can resolve a verified download without user handoff."""
+        return False
+
     @abstractmethod
     def detect(self, path: Path) -> DetectedIso | None:
         """Identify an ISO without modifying it."""

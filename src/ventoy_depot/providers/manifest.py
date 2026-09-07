@@ -52,6 +52,14 @@ class ManifestProvider(Provider):
     def products(self) -> tuple[str, ...]:
         return self._products
 
+    @property
+    def supports_automatic_download(self) -> bool:
+        from .resolvers import BUILTIN_RESOLVER_IDS
+
+        return self.provider_id in BUILTIN_RESOLVER_IDS or any(
+            source.get("automatic_download", True) for source in self.manifest["release_sources"]
+        )
+
     def detect(self, path: Path) -> DetectedIso | None:
         volume_id: str | None = None
         volume_read = False

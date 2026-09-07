@@ -74,6 +74,19 @@ def test_manifest_provider_detects_without_executing_code() -> None:
     )
 
 
+def test_manifest_provider_reports_automatic_download_capability() -> None:
+    value = manifest()
+    provider = ManifestProvider(value)
+    assert provider.supports_automatic_download
+
+    value["release_sources"] = []
+    assert not ManifestProvider(value).supports_automatic_download
+
+    value["release_sources"] = manifest()["release_sources"]
+    value["release_sources"][0]["automatic_download"] = False  # type: ignore[index]
+    assert not ManifestProvider(value).supports_automatic_download
+
+
 def test_manifest_provider_normalizes_x86_dash_64_architecture() -> None:
     value = manifest()
     value["capabilities"]["architectures"] = ["x86_64"]  # type: ignore[index]

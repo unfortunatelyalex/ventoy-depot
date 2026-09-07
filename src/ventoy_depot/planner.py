@@ -168,6 +168,11 @@ def build_add_plan(device: Device, identity: IsoIdentity, refresh: bool = False)
     provider = providers.get(identity.provider_id)
     if provider is None:
         raise ValueError(f"Unknown provider: {identity.provider_id}")
+    if not provider.supports_automatic_download:
+        raise ValueError(
+            f"Provider {identity.provider_id} supports detection only; "
+            "an automatic verified download is not available."
+        )
     target = _resolve_target(provider, identity)
     errors: list[str] = []
     if target.verification_level == VerificationLevel.UNVERIFIED:

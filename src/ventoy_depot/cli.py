@@ -75,6 +75,7 @@ def _dispatch(arguments: argparse.Namespace) -> int:
                 "capabilities": to_jsonable(item.capabilities),
                 "origin": item.origin,
                 "custom": item.custom,
+                "supports_automatic_download": item.supports_automatic_download,
             }
             for item in provider_map().values()
         ]

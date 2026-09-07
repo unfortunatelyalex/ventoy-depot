@@ -37,6 +37,7 @@ def artifact(filename: str, size: int) -> ReleaseArtifact:
 
 class StubProvider:
     custom = False
+    supports_automatic_download = True
 
     def __init__(self, targets: dict[str, ReleaseArtifact]) -> None:
         self.targets = targets
@@ -312,6 +313,17 @@ def test_explicit_new_iso_request_builds_add_only_plan(monkeypatch, tmp_path: Pa
     assert plan.items[0].local.path == tmp_path / "new-a.iso"
     assert plan.items[0].local.detection_source == "explicit-add-request"
     assert not plan.items[0].replacement_allowed
+
+
+def test_explicit_new_iso_request_rejects_detection_only_provider(
+    monkeypatch, tmp_path: Path
+) -> None:
+    provider = StubProvider({"a": artifact("new-a.iso", 60)})
+    provider.supports_automatic_download = False
+    monkeypatch.setattr("ventoy_depot.planner.provider_map", lambda **_kwargs: {"test": provider})
+
+    with pytest.raises(ValueError, match="supports detection only"):
+        build_add_plan(device(tmp_path), identity("a"))
 
 
 def test_explicit_new_iso_request_never_overwrites_existing_target(

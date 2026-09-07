@@ -670,7 +670,9 @@ class AddIsoDialog(ModalScreen[IsoIdentity | None]):
             )
             for provider in sorted(providers, key=lambda item: item.display_name.lower())
             for product in provider.products
-            if provider.capabilities.channels and provider.capabilities.architectures
+            if provider.supports_automatic_download
+            and provider.capabilities.channels
+            and provider.capabilities.architectures
         )
 
     def compose(self) -> ComposeResult:
