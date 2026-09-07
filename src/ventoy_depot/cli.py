@@ -167,6 +167,7 @@ def _doctor_identity(provider: Provider) -> IsoIdentity:
         "artix-linux": "dinit",
         "fedora": "live",
         "manjaro": "full",
+        "mx-linux": "standard",
         "rescuezilla": capabilities.flavors[-1] if capabilities.flavors else None,
         "void-linux": "glibc",
     }

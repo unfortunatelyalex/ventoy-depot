@@ -75,6 +75,10 @@ BUILTIN_RESOLVER_IDS = frozenset(
         "mageia",
         "centos-stream",
         "bunsenlabs",
+        "security-onion",
+        "talos-linux",
+        "antix",
+        "mx-linux",
     }
 )
 
@@ -145,6 +149,10 @@ def resolve_release(provider_id: str, identity: IsoIdentity) -> ReleaseArtifact:
         "mageia": _mageia,
         "centos-stream": _centos_stream,
         "bunsenlabs": _bunsenlabs,
+        "security-onion": _security_onion,
+        "talos-linux": _talos_linux,
+        "antix": _antix,
+        "mx-linux": _mx_linux,
     }
     try:
         resolver = resolvers[provider_id]
@@ -2573,4 +2581,198 @@ def _bunsenlabs(identity: IsoIdentity) -> ReleaseArtifact:
         _checksum(sums, filename, "sha256"),
         hosts,
         build=build,
+    )
+
+
+def _security_onion(identity: IsoIdentity) -> ReleaseArtifact:
+    if identity.product_id != "security-onion" or identity.edition != "installer":
+        raise ProviderError("This Security Onion medium is not supported.")
+    if identity.architecture != "x86_64" or identity.channel != "stable":
+        raise ProviderError("Security Onion automatic updates support stable x86_64 ISOs only.")
+    hosts = {"raw.githubusercontent.com", "download.securityonion.net"}
+    client = SafeHttpClient(frozenset(hosts))
+    metadata = _text(
+        client,
+        "https://raw.githubusercontent.com/Security-Onion-Solutions/"
+        "securityonion/3/main/DOWNLOAD_AND_VERIFY_ISO.md",
+    )
+    matches = list(
+        re.finditer(
+            r"https://download\.securityonion\.net/file/securityonion/"
+            r"(?P<filename>securityonion-(?P<version>\d+(?:\.\d+)+)-"
+            r"(?P<build>\d{8})\.iso)",
+            metadata,
+            re.IGNORECASE,
+        )
+    )
+    if not matches:
+        raise ProviderError("The official Security Onion metadata contains no stable ISO.")
+    match = max(
+        matches,
+        key=lambda item: (_version_key(item.group("version")), item.group("build")),
+    )
+    filename = match.group("filename")
+    version = match.group("version")
+    build = match.group("build")
+    # The official document lists every digest after the matching ISO URL. Limit
+    # the search to that release's nearby section so a stale checksum elsewhere
+    # in the document can never be paired with the selected artifact.
+    release_section = metadata[match.end() : match.end() + 1_000]
+    checksum_match = re.search(
+        r"\bSHA256:\s*(?P<hash>[A-Fa-f0-9]{64})\b",
+        release_section,
+        re.IGNORECASE,
+    )
+    if checksum_match is None:
+        raise ProviderError("The official Security Onion metadata lacks its SHA-256 checksum.")
+    return _artifact(
+        identity,
+        version,
+        filename,
+        match.group(0),
+        "sha256",
+        checksum_match.group("hash").lower(),
+        hosts,
+        build=build,
+    )
+
+
+def _talos_linux(identity: IsoIdentity) -> ReleaseArtifact:
+    if identity.product_id != "talos-linux" or identity.edition != "metal":
+        raise ProviderError("This Talos Linux medium is not supported.")
+    if identity.architecture not in {"amd64", "arm64"} or identity.channel != "stable":
+        raise ProviderError("Talos Linux automatic updates support stable metal ISOs only.")
+    hosts = {
+        "api.github.com",
+        "github.com",
+        "release-assets.githubusercontent.com",
+        "objects.githubusercontent.com",
+    }
+    client = SafeHttpClient(frozenset(hosts))
+    payload = json.loads(
+        _text(client, "https://api.github.com/repos/siderolabs/talos/releases/latest")
+    )
+    version = str(payload.get("tag_name", "")).removeprefix("v")
+    filename = f"metal-{identity.architecture}.iso"
+    assets = {
+        str(asset.get("name")): asset
+        for asset in payload.get("assets", [])
+        if isinstance(asset, dict)
+    }
+    asset = assets.get(filename)
+    if not version or asset is None:
+        raise ProviderError("The latest Talos Linux release lacks the selected metal ISO.")
+    digest = str(asset.get("digest", ""))
+    if not re.fullmatch(r"sha256:[A-Fa-f0-9]{64}", digest):
+        raise ProviderError("The Talos Linux ISO lacks an official SHA-256 digest.")
+    size = asset.get("size")
+    if not isinstance(size, int) or size <= 0:
+        raise ProviderError("The Talos Linux ISO lacks an official download size.")
+    return _artifact(
+        identity,
+        version,
+        filename,
+        str(asset.get("browser_download_url", "")),
+        "sha256",
+        digest.removeprefix("sha256:").lower(),
+        hosts,
+        size_bytes=size,
+    )
+
+
+def _antix(identity: IsoIdentity) -> ReleaseArtifact:
+    if identity.product_id != "antix" or identity.edition not in {
+        "full",
+        "base",
+        "core",
+        "net",
+    }:
+        raise ProviderError("This antiX medium is not supported.")
+    if identity.architecture not in {"x86_64", "386"} or identity.channel != "stable":
+        raise ProviderError("antiX automatic updates support stable x64 and 386 ISOs only.")
+    hosts = {
+        "sourceforge.net",
+        "downloads.sourceforge.net",
+        "netix.dl.sourceforge.net",
+    }
+    client = SafeHttpClient(frozenset(hosts))
+    root = "https://sourceforge.net/projects/antix-linux/files/Final/"
+    root_page = _text(client, root)
+    versions = re.findall(
+        r"/projects/antix-linux/files/Final/antiX-(?P<version>\d+(?:\.\d+)*)/",
+        root_page,
+        re.IGNORECASE,
+    )
+    if not versions:
+        raise ProviderError("The official antiX release index contains no stable release.")
+    version = max(set(versions), key=_version_key)
+    release_url = f"{root}antiX-{version}/"
+    release_page = _text(client, release_url)
+    architecture = "x64" if identity.architecture == "x86_64" else "386"
+    if identity.edition == "net":
+        filename = f"antiX-{version}-net_{architecture}-net.iso"
+    else:
+        filename = f"antiX-{version}_{architecture}-{identity.edition}.iso"
+    if re.search(rf"\b{re.escape(filename)}\b", release_page, re.IGNORECASE) is None:
+        raise ProviderError("The latest antiX release no longer provides this exact ISO variant.")
+    download_url = f"{release_url}{filename}/download?use_mirror=netix"
+    checksum_url = f"{release_url}{filename}.sha256/download?use_mirror=netix"
+    checksum = _checksum(_text(client, checksum_url), filename, "sha256")
+    return _artifact(
+        identity,
+        version,
+        filename,
+        download_url,
+        "sha256",
+        checksum,
+        hosts,
+    )
+
+
+def _mx_linux(identity: IsoIdentity) -> ReleaseArtifact:
+    valid_variants = {
+        ("xfce", "standard"),
+        ("xfce", "ahs"),
+        ("kde", "ahs"),
+        ("fluxbox", "standard"),
+    }
+    if (
+        identity.product_id != "mx-linux"
+        or (identity.edition, identity.flavor) not in valid_variants
+    ):
+        raise ProviderError("This MX Linux desktop or AHS variant is not supported.")
+    if identity.architecture != "x86_64" or identity.channel != "stable":
+        raise ProviderError("MX Linux automatic updates support stable x64 ISOs only.")
+    hosts = {
+        "sourceforge.net",
+        "downloads.sourceforge.net",
+        "netix.dl.sourceforge.net",
+    }
+    client = SafeHttpClient(frozenset(hosts))
+    root = "https://sourceforge.net/projects/mx-linux/files/Final/"
+    root_page = _text(client, root)
+    versions = re.findall(r"\bMX-(?P<version>\d+(?:\.\d+)*)_", root_page, re.IGNORECASE)
+    if not versions:
+        raise ProviderError("The official MX Linux index contains no stable release.")
+    version = max(set(versions), key=_version_key)
+    assert identity.edition is not None
+    directory = {"xfce": "Xfce", "kde": "KDE", "fluxbox": "Fluxbox"}[identity.edition]
+    release_url = f"{root}{directory}/"
+    release_page = _text(client, release_url)
+    edition = {"xfce": "Xfce", "kde": "KDE", "fluxbox": "fluxbox"}[identity.edition]
+    ahs = "_ahs" if identity.edition == "xfce" and identity.flavor == "ahs" else ""
+    filename = f"MX-{version}_{edition}{ahs}_x64.iso"
+    if re.search(rf"\b{re.escape(filename)}\b", release_page, re.IGNORECASE) is None:
+        raise ProviderError("The current MX Linux release lacks this exact desktop variant.")
+    download_url = f"{release_url}{filename}/download?use_mirror=netix"
+    checksum_url = f"{release_url}{filename}.sha256/download?use_mirror=netix"
+    checksum = _checksum(_text(client, checksum_url), filename, "sha256")
+    return _artifact(
+        identity,
+        version,
+        filename,
+        download_url,
+        "sha256",
+        checksum,
+        hosts,
     )

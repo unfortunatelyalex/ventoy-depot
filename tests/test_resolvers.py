@@ -2298,3 +2298,176 @@ def test_bunsenlabs_resolver_uses_official_sha256_and_preserves_variant(monkeypa
     assert artifact.checksum == digest
     assert artifact.identity is not None
     assert artifact.identity.variant_key() == installed.variant_key()
+
+
+def test_security_onion_resolver_binds_sha256_to_selected_release(monkeypatch) -> None:
+    old_filename = "securityonion-3.1.0-20260101.iso"
+    filename = "securityonion-3.2.0-20260729.iso"
+    old_digest = "a" * 64
+    digest = "b" * 64
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, requested: str) -> bytes:
+            assert requested.endswith("/DOWNLOAD_AND_VERIFY_ISO.md")
+            return (
+                "Previous release:\n"
+                f"https://download.securityonion.net/file/securityonion/{old_filename}\n"
+                f"SHA256: {old_digest}\n"
+                "Current release:\n"
+                f"https://download.securityonion.net/file/securityonion/{filename}\n"
+                "MD5: 0123456789abcdef0123456789abcdef\n"
+                "SHA1: 0123456789abcdef0123456789abcdef01234567\n"
+                f"SHA256: {digest}\n"
+            ).encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "security-onion",
+        "security-onion",
+        "installer",
+        None,
+        "stable",
+        "x86_64",
+        None,
+        "3.1.0",
+        "20260101",
+    )
+
+    artifact = resolvers.resolve_release("security-onion", installed)
+
+    assert artifact.filename == filename
+    assert artifact.version == "3.2.0"
+    assert artifact.build == "20260729"
+    assert artifact.checksum == digest
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()
+
+
+@pytest.mark.parametrize("architecture", ["amd64", "arm64"])
+def test_talos_linux_resolver_uses_github_asset_digest(monkeypatch, architecture: str) -> None:
+    filename = f"metal-{architecture}.iso"
+    digest = "c" * 64
+    url = f"https://github.com/siderolabs/talos/releases/download/v1.13.3/{filename}"
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, requested: str) -> bytes:
+            assert requested == "https://api.github.com/repos/siderolabs/talos/releases/latest"
+            return json.dumps(
+                {
+                    "tag_name": "v1.13.3",
+                    "assets": [
+                        {
+                            "name": filename,
+                            "browser_download_url": url,
+                            "digest": f"sha256:{digest}",
+                            "size": 319_000_000,
+                        }
+                    ],
+                }
+            ).encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "talos-linux", "talos-linux", "metal", None, "stable", architecture, None, None, None
+    )
+
+    artifact = resolvers.resolve_release("talos-linux", installed)
+
+    assert artifact.version == "1.13.3"
+    assert artifact.filename == filename
+    assert artifact.download_url == url
+    assert artifact.checksum == digest
+    assert artifact.size_bytes == 319_000_000
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()
+
+
+@pytest.mark.parametrize(
+    ("edition", "architecture", "filename"),
+    [
+        ("full", "x86_64", "antiX-26_x64-full.iso"),
+        ("core", "386", "antiX-26_386-core.iso"),
+    ],
+)
+def test_antix_resolver_preserves_variant_and_uses_sha256(
+    monkeypatch, edition: str, architecture: str, filename: str
+) -> None:
+    digest = "d" * 64
+    root = "https://sourceforge.net/projects/antix-linux/files/Final/"
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, requested: str) -> bytes:
+            if requested == root:
+                return (
+                    b'<a href="/projects/antix-linux/files/Final/antiX-23.2/">old</a>'
+                    b'<a href="/projects/antix-linux/files/Final/antiX-26/">current</a>'
+                )
+            if requested == root + "antiX-26/":
+                return f"{filename}\n".encode()
+            assert requested == (f"{root}antiX-26/{filename}.sha256/download?use_mirror=netix")
+            return f"{digest}  {filename}\n".encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "antix", "antix", edition, None, "stable", architecture, None, "23.2", None
+    )
+
+    artifact = resolvers.resolve_release("antix", installed)
+
+    assert artifact.version == "26"
+    assert artifact.filename == filename
+    assert artifact.checksum == digest
+    assert artifact.download_url.endswith(f"/{filename}/download?use_mirror=netix")
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()
+
+
+@pytest.mark.parametrize(
+    ("edition", "flavor", "directory", "filename"),
+    [
+        ("xfce", "standard", "Xfce", "MX-25.2_Xfce_x64.iso"),
+        ("xfce", "ahs", "Xfce", "MX-25.2_Xfce_ahs_x64.iso"),
+        ("kde", "ahs", "KDE", "MX-25.2_KDE_x64.iso"),
+        ("fluxbox", "standard", "Fluxbox", "MX-25.2_fluxbox_x64.iso"),
+    ],
+)
+def test_mx_linux_resolver_preserves_desktop_and_ahs_variant(
+    monkeypatch, edition: str, flavor: str, directory: str, filename: str
+) -> None:
+    digest = "e" * 64
+    root = "https://sourceforge.net/projects/mx-linux/files/Final/"
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, requested: str) -> bytes:
+            if requested == root:
+                return b"MX-23.6_Xfce_x64.iso MX-25.2_Xfce_x64.iso"
+            if requested == f"{root}{directory}/":
+                return f"{filename}\n".encode()
+            assert requested == (f"{root}{directory}/{filename}.sha256/download?use_mirror=netix")
+            return f"{digest}  {filename}\n".encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "mx-linux", "mx-linux", edition, flavor, "stable", "x86_64", None, "23.6", None
+    )
+
+    artifact = resolvers.resolve_release("mx-linux", installed)
+
+    assert artifact.version == "25.2"
+    assert artifact.filename == filename
+    assert artifact.checksum == digest
+    assert artifact.download_url.endswith(f"/{directory}/{filename}/download?use_mirror=netix")
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()

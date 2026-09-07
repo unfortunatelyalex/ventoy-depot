@@ -1977,4 +1977,109 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
         ),
         ProviderCapabilities(("desktop",), ("amd64",), (), ("stable",)),
     ),
+    FilenameProvider(
+        "security-onion",
+        "Security Onion",
+        (
+            FilenameRule(
+                re.compile(
+                    r"securityonion-(?P<version>\d+(?:\.\d+)+)-"
+                    r"(?P<build>\d{8})\.iso$",
+                    re.I,
+                ),
+                "security-onion",
+                default_edition="installer",
+                default_architecture="x86_64",
+            ),
+        ),
+        ProviderCapabilities(("installer",), ("x86_64",), (), ("stable",)),
+    ),
+    FilenameProvider(
+        "talos-linux",
+        "Talos Linux",
+        (
+            FilenameRule(
+                re.compile(r"metal-(?P<architecture>amd64|arm64)\.iso$", re.I),
+                "talos-linux",
+                default_edition="metal",
+            ),
+        ),
+        ProviderCapabilities(("metal",), ("amd64", "arm64"), (), ("stable",)),
+    ),
+    FilenameProvider(
+        "antix",
+        "antiX Linux",
+        (
+            FilenameRule(
+                re.compile(
+                    r"antiX-(?P<version>\d+(?:\.\d+)*)_(?P<architecture>x64|386)-"
+                    r"(?P<edition>full|base|core)\.iso$",
+                    re.I,
+                ),
+                "antix",
+            ),
+            FilenameRule(
+                re.compile(
+                    r"antiX-(?P<version>\d+(?:\.\d+)*)-net_"
+                    r"(?P<architecture>x64|386)-(?P<edition>net)\.iso$",
+                    re.I,
+                ),
+                "antix",
+            ),
+        ),
+        ProviderCapabilities(
+            ("full", "base", "core", "net"),
+            ("x86_64", "386"),
+            (),
+            ("stable",),
+        ),
+    ),
+    FilenameProvider(
+        "mx-linux",
+        "MX Linux",
+        (
+            FilenameRule(
+                re.compile(
+                    r"MX-(?P<version>\d+(?:\.\d+)*)_(?P<edition>Xfce)_"
+                    r"(?P<architecture>x64)\.iso$",
+                    re.I,
+                ),
+                "mx-linux",
+                default_flavor="standard",
+            ),
+            FilenameRule(
+                re.compile(
+                    r"MX-(?P<version>\d+(?:\.\d+)*)_(?P<edition>Xfce)_"
+                    r"(?P<flavor>ahs)_(?P<architecture>x64)\.iso$",
+                    re.I,
+                ),
+                "mx-linux",
+            ),
+            FilenameRule(
+                re.compile(
+                    r"MX-(?P<version>\d+(?:\.\d+)*)_(?P<edition>KDE)_"
+                    r"(?P<architecture>x64)\.iso$",
+                    re.I,
+                ),
+                "mx-linux",
+                default_flavor="ahs",
+            ),
+            FilenameRule(
+                re.compile(
+                    r"MX-(?P<version>\d+(?:\.\d+)*)_(?P<edition>fluxbox)_"
+                    r"(?P<architecture>x64)\.iso$",
+                    re.I,
+                ),
+                "mx-linux",
+                default_flavor="standard",
+            ),
+        ),
+        ProviderCapabilities(
+            ("xfce", "kde", "fluxbox"),
+            ("x86_64",),
+            (),
+            ("stable",),
+            ("standard", "ahs"),
+        ),
+    ),
 )

@@ -215,6 +215,16 @@ from ventoy_depot.providers.builtin import BUILTIN_PROVIDERS
             "aarch64",
         ),
         ("carbon-1-260211-amd64.hybrid.iso", "bunsenlabs", "desktop", "amd64"),
+        ("securityonion-3.2.0-20260729.iso", "security-onion", "installer", "x86_64"),
+        ("metal-amd64.iso", "talos-linux", "metal", "amd64"),
+        ("metal-arm64.iso", "talos-linux", "metal", "arm64"),
+        ("antiX-26_x64-full.iso", "antix", "full", "x86_64"),
+        ("antiX-23.2_386-core.iso", "antix", "core", "386"),
+        ("antiX-23.2-net_x64-net.iso", "antix", "net", "x86_64"),
+        ("MX-25.2_Xfce_x64.iso", "mx-linux", "xfce", "x86_64"),
+        ("MX-25.2_Xfce_ahs_x64.iso", "mx-linux", "xfce", "x86_64"),
+        ("MX-25.2_KDE_x64.iso", "mx-linux", "kde", "x86_64"),
+        ("MX-25.2_fluxbox_x64.iso", "mx-linux", "fluxbox", "x86_64"),
     ],
 )
 def test_variant_preserving_detection(
