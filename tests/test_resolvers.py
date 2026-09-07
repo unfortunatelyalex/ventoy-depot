@@ -58,6 +58,105 @@ def test_openbsd_resolver_preserves_medium_and_architecture(
 
 
 @pytest.mark.parametrize(
+    ("channel", "listing", "upstream_name", "target_name", "version"),
+    [
+        (
+            "stable",
+            "omnios-r151058.iso",
+            "omnios-r151058.iso",
+            "omnios-stable-r151058.iso",
+            "151058",
+        ),
+        (
+            "lts",
+            "omnios-r151054.iso omnios-r151054r.iso",
+            "omnios-r151054r.iso",
+            "omnios-lts-r151054r.iso",
+            "151054r",
+        ),
+        (
+            "bloody",
+            "omnios-bloody-20260823.iso",
+            "omnios-bloody-20260823.iso",
+            "omnios-bloody-20260823.iso",
+            "20260823",
+        ),
+    ],
+)
+def test_omnios_resolver_preserves_channel(
+    monkeypatch,
+    channel: str,
+    listing: str,
+    upstream_name: str,
+    target_name: str,
+    version: str,
+) -> None:
+    digest = "0" * 64
+    base = f"https://downloads.omnios.org/media/{channel}/"
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, requested: str) -> bytes:
+            if requested == base:
+                return listing.encode()
+            assert requested == base + upstream_name + ".sha256"
+            return digest.encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "omnios", "omnios", "installer", None, channel, "x86_64", None, "1", None
+    )
+
+    artifact = resolvers.resolve_release("omnios", installed)
+
+    assert artifact.version == version
+    assert artifact.filename == target_name
+    assert artifact.download_url == base + upstream_name
+    assert artifact.checksum == digest
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()
+
+
+def test_tuxedo_os_resolver_uses_versioned_iso_and_sha256_sidecar(monkeypatch) -> None:
+    filename = "TUXEDO-OS-202608031247.iso"
+    digest = "f" * 64
+    base = "https://os.tuxedocomputers.com/"
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, requested: str) -> bytes:
+            if requested == base:
+                return f'<a href="{filename}">{filename}</a>'.encode()
+            assert requested == base + "checksums/" + filename + ".sha256"
+            return f"{digest}  {filename}\n".encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "tuxedo-os",
+        "tuxedo-os",
+        "desktop",
+        None,
+        "stable",
+        "x86_64",
+        None,
+        "202501010000",
+        None,
+    )
+
+    artifact = resolvers.resolve_release("tuxedo-os", installed)
+
+    assert artifact.version == "202608031247"
+    assert artifact.filename == filename
+    assert artifact.checksum == digest
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()
+
+
+@pytest.mark.parametrize(
     ("edition", "architecture"),
     [("base", "ppc"), ("gnome", "aarch64"), ("plasma", "riscv64")],
 )

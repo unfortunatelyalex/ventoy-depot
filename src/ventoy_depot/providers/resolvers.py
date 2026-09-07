@@ -40,6 +40,7 @@ BUILTIN_RESOLVER_IDS = frozenset(
         "opensuse-leap",
         "freebsd",
         "openbsd",
+        "omnios",
         "omarchy",
         "manjaro",
         "pop-os",
@@ -59,6 +60,7 @@ BUILTIN_RESOLVER_IDS = frozenset(
         "haiku",
         "solus",
         "truenas",
+        "tuxedo-os",
         "tails",
         "grml",
         "kde-neon",
@@ -101,6 +103,7 @@ def resolve_release(provider_id: str, identity: IsoIdentity) -> ReleaseArtifact:
         "opensuse-leap": _opensuse_leap,
         "freebsd": _freebsd,
         "openbsd": _openbsd,
+        "omnios": _omnios,
         "omarchy": _omarchy,
         "manjaro": _manjaro,
         "pop-os": _pop_os,
@@ -120,6 +123,7 @@ def resolve_release(provider_id: str, identity: IsoIdentity) -> ReleaseArtifact:
         "haiku": _haiku,
         "solus": _solus,
         "truenas": _truenas,
+        "tuxedo-os": _tuxedo_os,
         "tails": _tails,
         "grml": _grml,
         "kde-neon": _kde_neon,
@@ -1244,6 +1248,62 @@ def _openbsd(identity: IsoIdentity) -> ReleaseArtifact:
         checksum,
         {host},
     )
+
+
+def _omnios(identity: IsoIdentity) -> ReleaseArtifact:
+    if (
+        identity.edition != "installer"
+        or identity.architecture != "x86_64"
+        or identity.channel not in {"stable", "lts", "bloody"}
+    ):
+        raise ProviderError("This OmniOS medium, architecture or release channel is unsupported.")
+    host = "downloads.omnios.org"
+    client = SafeHttpClient(frozenset({host}))
+    base = f"https://{host}/media/{identity.channel}/"
+    if identity.channel == "bloody":
+        expression = re.compile(r"\b(omnios-bloody-(?P<version>\d{8})\.iso)\b", re.I)
+    else:
+        expression = re.compile(r"\b(omnios-r(?P<version>\d+[a-z]?)\.iso)\b", re.I)
+    matches = list(expression.finditer(_text(client, base)))
+    if not matches:
+        raise ProviderError("The selected OmniOS channel contains no installation ISO.")
+    match = max(
+        matches,
+        key=lambda item: (_version_key(item.group("version")), item.group("version").lower()),
+    )
+    upstream_name, version = match.group(1), match.group("version")
+    checksum = _checksum(_text(client, base + upstream_name + ".sha256"), upstream_name, "sha256")
+    filename = (
+        upstream_name
+        if identity.channel == "bloody"
+        else f"omnios-{identity.channel}-r{version}.iso"
+    )
+    return _artifact(
+        identity,
+        version,
+        filename,
+        base + upstream_name,
+        "sha256",
+        checksum,
+        {host},
+    )
+
+
+def _tuxedo_os(identity: IsoIdentity) -> ReleaseArtifact:
+    if identity.edition != "desktop" or identity.architecture != "x86_64":
+        raise ProviderError("TUXEDO OS automatic updates support the x86_64 desktop ISO only.")
+    if identity.flavor is not None:
+        raise ProviderError("This TUXEDO OS image flavor is unsupported.")
+    host = "os.tuxedocomputers.com"
+    client = SafeHttpClient(frozenset({host}))
+    base = f"https://{host}/"
+    names = re.findall(r"\b(TUXEDO-OS-(?P<version>\d{12})\.iso)\b", _text(client, base))
+    if not names:
+        raise ProviderError("The official TUXEDO OS index contains no versioned ISO.")
+    filename, version = max(names, key=lambda item: _version_key(item[1]))
+    checksum_url = base + "checksums/" + filename + ".sha256"
+    checksum = _checksum(_text(client, checksum_url), filename, "sha256")
+    return _artifact(identity, version, filename, base + filename, "sha256", checksum, {host})
 
 
 def _omarchy(identity: IsoIdentity) -> ReleaseArtifact:

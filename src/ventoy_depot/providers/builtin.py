@@ -1023,6 +1023,48 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
     ),
     OpenBsdProvider(),
     FilenameProvider(
+        "omnios",
+        "OmniOS",
+        (
+            FilenameRule(
+                re.compile(r"omnios-stable-r(?P<version>\d+[a-z]?)\.iso$", re.I),
+                "omnios",
+                default_channel="stable",
+                default_architecture="x86_64",
+                default_edition="installer",
+            ),
+            FilenameRule(
+                re.compile(r"omnios-r(?P<version>151058)\.iso$", re.I),
+                "omnios",
+                default_channel="stable",
+                default_architecture="x86_64",
+                default_edition="installer",
+            ),
+            FilenameRule(
+                re.compile(r"omnios-lts-r(?P<version>\d+[a-z]?)\.iso$", re.I),
+                "omnios",
+                default_channel="lts",
+                default_architecture="x86_64",
+                default_edition="installer",
+            ),
+            FilenameRule(
+                re.compile(r"omnios-r(?P<version>151054r)\.iso$", re.I),
+                "omnios",
+                default_channel="lts",
+                default_architecture="x86_64",
+                default_edition="installer",
+            ),
+            FilenameRule(
+                re.compile(r"omnios-bloody-(?P<version>\d{8})\.iso$", re.I),
+                "omnios",
+                default_channel="bloody",
+                default_architecture="x86_64",
+                default_edition="installer",
+            ),
+        ),
+        ProviderCapabilities(("installer",), ("x86_64",), (), ("stable", "lts", "bloody")),
+    ),
+    FilenameProvider(
         "grml",
         "Grml",
         (
@@ -1574,6 +1616,19 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
             ),
         ),
         ProviderCapabilities(("community",), ("x86_64",), (), ("stable", "beta")),
+    ),
+    FilenameProvider(
+        "tuxedo-os",
+        "TUXEDO OS",
+        (
+            FilenameRule(
+                re.compile(r"TUXEDO-OS-(?P<version>\d{12})\.iso$", re.I),
+                "tuxedo-os",
+                default_architecture="x86_64",
+                default_edition="desktop",
+            ),
+        ),
+        ProviderCapabilities(("desktop",), ("x86_64",), (), ("stable",)),
     ),
     FilenameProvider(
         "kde-neon",

@@ -93,6 +93,9 @@ from ventoy_depot.providers.builtin import BUILTIN_PROVIDERS
         ),
         ("FreeBSD-15.0-RELEASE-amd64-dvd1.iso", "freebsd", "dvd1", "amd64"),
         ("OpenBSD-7.9-amd64-install.iso", "openbsd", "install", "amd64"),
+        ("omnios-stable-r151058.iso", "omnios", "installer", "x86_64"),
+        ("omnios-lts-r151054r.iso", "omnios", "installer", "x86_64"),
+        ("omnios-bloody-20260823.iso", "omnios", "installer", "x86_64"),
         ("Rocky-9.8-x86_64-minimal.iso", "rocky-linux", "minimal", "x86_64"),
         ("AlmaLinux-10.2-aarch64-dvd.iso", "almalinux", "dvd", "aarch64"),
         ("OracleLinux-R10-U2-x86_64-dvd.iso", "oracle-linux", "dvd", "x86_64"),
@@ -146,6 +149,7 @@ from ventoy_depot.providers.builtin import BUILTIN_PROVIDERS
         ("Solus-GNOME-Release-2026-04-18.iso", "solus", "gnome", "x86_64"),
         ("TrueNAS-SCALE-25.10.7.iso", "truenas", "community", "x86_64"),
         ("TrueNAS-26.0.0-BETA.3.iso", "truenas", "community", "x86_64"),
+        ("TUXEDO-OS-202608031247.iso", "tuxedo-os", "desktop", "x86_64"),
         ("neon-user-desktop-20260903-0454.iso", "kde-neon", "desktop", "x86_64"),
         ("neon-testing-desktop-20260901-0146.iso", "kde-neon", "desktop", "x86_64"),
         ("Parrot-home-7.3_amd64.iso", "parrot-os", "home", "amd64"),
@@ -195,6 +199,11 @@ def test_unknown_filename_is_not_guessed() -> None:
 
 def test_artix_weekly_filename_is_not_silently_assigned_to_stable() -> None:
     assert identify_iso(Path("artix-base-openrc-20260903-x86_64.iso")).identity is None
+
+
+def test_omnios_ambiguous_unlabelled_channel_is_not_guessed() -> None:
+    assert identify_iso(Path("omnios-r151056.iso")).identity is None
+    assert identify_iso(Path("TUXEDO-OS_current.iso")).identity is None
 
 
 def test_openbsd_official_name_requires_matching_volume_id(tmp_path: Path) -> None:
