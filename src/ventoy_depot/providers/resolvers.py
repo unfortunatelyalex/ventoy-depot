@@ -13,6 +13,7 @@ BUILTIN_RESOLVER_IDS = frozenset(
     {
         "arch",
         "artix-linux",
+        "backbox",
         "alpine",
         "chimera-linux",
         "rocky-linux",
@@ -73,6 +74,7 @@ def resolve_release(provider_id: str, identity: IsoIdentity) -> ReleaseArtifact:
     resolvers = {
         "arch": _arch,
         "artix-linux": _artix_linux,
+        "backbox": _backbox,
         "alpine": _alpine,
         "chimera-linux": _chimera_linux,
         "rocky-linux": _rocky_linux,
@@ -265,6 +267,21 @@ def _artix_linux(identity: IsoIdentity) -> ReleaseArtifact:
         checksum,
         hosts,
     )
+
+
+def _backbox(identity: IsoIdentity) -> ReleaseArtifact:
+    if identity.edition != "desktop" or identity.architecture != "amd64":
+        raise ProviderError("BackBox automatic updates support the amd64 desktop ISO only.")
+    hosts = {"www.backbox.org", "linux.backbox.org", "backbox.mirror.garr.it"}
+    client = SafeHttpClient(frozenset(hosts))
+    page = _text(client, "https://www.backbox.org/download/")
+    names = re.findall(r"\b(backbox-(?P<version>\d+(?:\.\d+)*)-desktop-amd64\.iso)\b", page)
+    if not names:
+        raise ProviderError("The official BackBox page contains no desktop ISO metadata.")
+    filename, version = max(names, key=lambda item: _version_key(item[1]))
+    checksum = _checksum(page, filename, "sha256")
+    url = f"https://backbox.mirror.garr.it/{filename}"
+    return _artifact(identity, version, filename, url, "sha256", checksum, hosts)
 
 
 def _alpine(identity: IsoIdentity) -> ReleaseArtifact:

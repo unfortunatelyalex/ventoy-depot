@@ -191,6 +191,33 @@ def test_artix_resolver_uses_only_stable_variant_and_normalizes_target_name(monk
     assert artifact.identity.variant_key() == installed.variant_key()
 
 
+def test_backbox_resolver_uses_official_hash_and_fixed_garr_mirror(monkeypatch) -> None:
+    filename = "backbox-9-desktop-amd64.iso"
+    digest = "b" * 64
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, requested: str) -> bytes:
+            assert requested == "https://www.backbox.org/download/"
+            return f"File:</strong> {filename}<br />SHA256:</strong> {digest}".encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "backbox", "backbox", "desktop", None, "stable", "amd64", None, "8", None
+    )
+
+    artifact = resolvers.resolve_release("backbox", installed)
+
+    assert artifact.version == "9"
+    assert artifact.filename == filename
+    assert artifact.download_url == f"https://backbox.mirror.garr.it/{filename}"
+    assert artifact.checksum == digest
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()
+
+
 @pytest.mark.parametrize("edition", ["netinstall", "desktop-live"])
 def test_devuan_resolver_preserves_installer_or_live_medium(monkeypatch, edition: str) -> None:
     filename = f"devuan_excalibur_6.1.1_amd64_{edition}.iso"

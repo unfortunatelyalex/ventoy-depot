@@ -321,6 +321,21 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
     ),
     ArtixProvider(),
     FilenameProvider(
+        "backbox",
+        "BackBox Linux",
+        (
+            FilenameRule(
+                re.compile(
+                    r"backbox-(?P<version>\d+(?:\.\d+)*)-(?P<edition>desktop)-"
+                    r"(?P<architecture>amd64)\.iso$",
+                    re.I,
+                ),
+                "backbox",
+            ),
+        ),
+        ProviderCapabilities(("desktop",), ("amd64",), (), ("stable",)),
+    ),
+    FilenameProvider(
         "alpine",
         "Alpine Linux",
         (

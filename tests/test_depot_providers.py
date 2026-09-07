@@ -14,6 +14,7 @@ from ventoy_depot.providers.builtin import BUILTIN_PROVIDERS
     [
         ("ubuntu-24.04.3-live-server-amd64.iso", "ubuntu", "live-server", "amd64"),
         ("artix-base-openrc-20260813-x86_64.iso", "artix-linux", "base", "x86_64"),
+        ("backbox-9-desktop-amd64.iso", "backbox", "desktop", "amd64"),
         (
             "artix-stable-plasma-dinit-20260813-x86_64.iso",
             "artix-linux",
