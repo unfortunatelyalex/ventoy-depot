@@ -103,6 +103,80 @@ class FilenameProvider(Provider):
         return super().is_newer(artifact, identity)
 
 
+class OpenBsdProvider(FilenameProvider):
+    """Recognize architecture-free upstream names only when ISO metadata agrees."""
+
+    _architectures = (
+        "alpha",
+        "amd64",
+        "arm64",
+        "hppa",
+        "i386",
+        "loongson",
+        "macppc",
+        "powerpc64",
+        "sparc64",
+    )
+    _official_name = re.compile(r"(?P<kind>install|cd)(?P<compact>\d{2,3})\.iso$", re.I)
+    _volume = re.compile(
+        r"OpenBSD/(?P<architecture>alpha|amd64|arm64|hppa|i386|loongson|macppc|"
+        r"powerpc64|sparc64)\s+(?P<version>\d+\.\d+) "
+        r"(?P<medium>Install|bootonly) CD$",
+        re.I,
+    )
+
+    def __init__(self) -> None:
+        super().__init__(
+            "openbsd",
+            "OpenBSD",
+            (
+                FilenameRule(
+                    re.compile(
+                        r"OpenBSD-(?P<version>\d+\.\d+)-"
+                        r"(?P<architecture>alpha|amd64|arm64|hppa|i386|loongson|"
+                        r"macppc|powerpc64|sparc64)-(?P<edition>install|bootonly)\.iso$",
+                        re.I,
+                    ),
+                    "openbsd",
+                    default_channel="release",
+                ),
+            ),
+            ProviderCapabilities(("install", "bootonly"), self._architectures, (), ("release",)),
+        )
+
+    def detect(self, path: Path) -> DetectedIso | None:
+        if detected := super().detect(path):
+            return detected
+        filename_match = self._official_name.fullmatch(path.name)
+        if filename_match is None:
+            return None
+        from ..iso import read_iso_volume_id
+
+        volume_id = read_iso_volume_id(path)
+        volume_match = self._volume.fullmatch(volume_id or "")
+        if volume_match is None:
+            return None
+        edition = "install" if filename_match.group("kind").lower() == "install" else "bootonly"
+        volume_edition = (
+            "install" if volume_match.group("medium").lower() == "install" else "bootonly"
+        )
+        version = volume_match.group("version")
+        if edition != volume_edition or filename_match.group("compact") != version.replace(".", ""):
+            return None
+        identity = IsoIdentity(
+            self.provider_id,
+            "openbsd",
+            edition,
+            None,
+            "release",
+            volume_match.group("architecture").lower(),
+            None,
+            version,
+            None,
+        )
+        return DetectedIso(path, identity, 1.0, "filename+iso9660-volume-id", volume_id=volume_id)
+
+
 def _lower(value: str | None) -> str | None:
     return value.lower() if value else None
 
@@ -840,6 +914,7 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
             ("release",),
         ),
     ),
+    OpenBsdProvider(),
     FilenameProvider(
         "grml",
         "Grml",

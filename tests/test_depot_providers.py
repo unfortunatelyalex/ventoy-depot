@@ -6,6 +6,7 @@ from ventoy_depot.iso import identify_iso
 from ventoy_depot.models import IsoIdentity
 from ventoy_depot.providers import provider_map
 from ventoy_depot.providers.base import ProviderError
+from ventoy_depot.providers.builtin import BUILTIN_PROVIDERS
 
 
 @pytest.mark.parametrize(
@@ -77,6 +78,7 @@ from ventoy_depot.providers.base import ProviderError
             "aarch64",
         ),
         ("FreeBSD-15.0-RELEASE-amd64-dvd1.iso", "freebsd", "dvd1", "amd64"),
+        ("OpenBSD-7.9-amd64-install.iso", "openbsd", "install", "amd64"),
         ("Rocky-9.8-x86_64-minimal.iso", "rocky-linux", "minimal", "x86_64"),
         ("AlmaLinux-10.2-aarch64-dvd.iso", "almalinux", "dvd", "aarch64"),
         ("OracleLinux-R10-U2-x86_64-dvd.iso", "oracle-linux", "dvd", "x86_64"),
@@ -175,6 +177,37 @@ def test_variant_preserving_detection(
 
 def test_unknown_filename_is_not_guessed() -> None:
     assert identify_iso(Path("renamed.iso")).identity is None
+
+
+def test_openbsd_official_name_requires_matching_volume_id(tmp_path: Path) -> None:
+    provider = next(item for item in BUILTIN_PROVIDERS if item.provider_id == "openbsd")
+    path = tmp_path / "install79.iso"
+    descriptor = bytearray(2048)
+    descriptor[0] = 1
+    descriptor[1:6] = b"CD001"
+    descriptor[6] = 1
+    descriptor[40:72] = b"OpenBSD/arm64   7.9 Install CD".ljust(32, b" ")
+    path.write_bytes(bytes(16 * 2048) + descriptor)
+
+    detected = identify_iso(path, (provider,))
+
+    assert detected.identity == IsoIdentity(
+        "openbsd", "openbsd", "install", None, "release", "arm64", None, "7.9", None
+    )
+    assert detected.detection_source == "filename+iso9660-volume-id"
+
+
+def test_openbsd_official_name_rejects_version_mismatch(tmp_path: Path) -> None:
+    provider = next(item for item in BUILTIN_PROVIDERS if item.provider_id == "openbsd")
+    path = tmp_path / "install78.iso"
+    descriptor = bytearray(2048)
+    descriptor[0] = 1
+    descriptor[1:6] = b"CD001"
+    descriptor[6] = 1
+    descriptor[40:72] = b"OpenBSD/amd64   7.9 Install CD".ljust(32, b" ")
+    path.write_bytes(bytes(16 * 2048) + descriptor)
+
+    assert identify_iso(path, (provider,)).identity is None
 
 
 def test_opensuse_current_alias_retains_variant_for_snapshot_update() -> None:

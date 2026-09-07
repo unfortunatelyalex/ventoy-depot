@@ -142,7 +142,7 @@ def load_and_validate_manifest(path: Path) -> dict[str, Any]:
         if key == "checksum_algorithm" or (key == "algorithm" and "checksum" in path_parts):
             if str(value).lower() not in {"sha256", "sha512"}:
                 raise SecurityError("Manifest checksums must use SHA-256 or SHA-512.")
-        if key in {"regex", "artifact_regex", "link_regex", "entry_regex"}:
+        if key == "regex" or key.endswith("_regex"):
             expression = str(value)
             if not expression or len(expression) > 512 or _looks_catastrophic(expression):
                 raise SecurityError("Manifest regex is too large or potentially unsafe.")
@@ -309,11 +309,20 @@ def _validate_registry_shape(payload: dict[str, Any]) -> None:
         raise SecurityError("Detection must contain 1-50 rules.")
     for value in detection:
         rule = _object(value, "detection rule")
-        if set(rule) != {"regex", "identity", "downloadable"}:
+        if set(rule) - {"regex", "volume_regex", "identity", "downloadable"} or not {
+            "regex",
+            "identity",
+            "downloadable",
+        } <= set(rule):
             raise SecurityError("Manifest detection rule is incomplete or has unsupported fields.")
         if not isinstance(rule["downloadable"], bool):
             raise SecurityError("Manifest detection downloadable flag must be boolean.")
-        _validate_identity(rule["identity"], capabilities, rule["regex"])
+        expressions = [rule["regex"]]
+        if "volume_regex" in rule:
+            if not isinstance(rule["volume_regex"], str) or not rule["volume_regex"]:
+                raise SecurityError("Manifest volume detection regex must be a non-empty string.")
+            expressions.append(rule["volume_regex"])
+        _validate_identity(rule["identity"], capabilities, *expressions)
 
     if "notes" in payload:
         notes = _string_list(payload["notes"], "notes", allow_empty=True)
@@ -321,7 +330,7 @@ def _validate_registry_shape(payload: dict[str, Any]) -> None:
             raise SecurityError("Manifest notes must not exceed 500 characters.")
 
 
-def _validate_identity(value: Any, capabilities: dict[str, Any], expression: str) -> None:
+def _validate_identity(value: Any, capabilities: dict[str, Any], *expressions: str) -> None:
     identity = _object(value, "identity")
     fields = {
         "product_id",
@@ -357,10 +366,12 @@ def _validate_identity(value: Any, capabilities: dict[str, Any], expression: str
         item = identity.get(field)
         if isinstance(item, str) and item.startswith("$group:"):
             group_name = item.removeprefix("$group:")
-            try:
-                groups = re.compile(expression).groupindex
-            except re.error:
-                groups = {}
+            groups: dict[str, int] = {}
+            for expression in expressions:
+                try:
+                    groups.update(re.compile(expression).groupindex)
+                except re.error:
+                    continue
             if not group_name or group_name not in groups:
                 raise SecurityError(f"Manifest identity {field} references an unknown regex group.")
         elif item is not None and item not in capabilities[capability]:

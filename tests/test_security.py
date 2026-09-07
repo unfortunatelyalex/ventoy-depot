@@ -121,6 +121,26 @@ def test_manifest_rejects_nested_repetition_regex(tmp_path: Path) -> None:
         load_and_validate_manifest(write_manifest(tmp_path, value))
 
 
+def test_manifest_rejects_unsafe_volume_regex(tmp_path: Path) -> None:
+    value = manifest()
+    value["detection"][0]["volume_regex"] = r"^(.*)+$"  # type: ignore[index]
+    with pytest.raises(SecurityError, match="unsafe"):
+        load_and_validate_manifest(write_manifest(tmp_path, value))
+
+
+def test_manifest_identity_may_reference_volume_regex_group(tmp_path: Path) -> None:
+    value = manifest()
+    value["capabilities"]["architectures"] = ["x86_64", "arm64"]  # type: ignore[index]
+    value["detection"][0]["volume_regex"] = (  # type: ignore[index]
+        r"^Example/(?P<architecture>x86_64|arm64)$"
+    )
+    value["detection"][0]["identity"]["architecture"] = "$group:architecture"  # type: ignore[index]
+
+    loaded = load_and_validate_manifest(write_manifest(tmp_path, value))
+
+    assert loaded["provider_id"] == "example-provider"
+
+
 def test_manifest_rejects_nested_unsafe_artifact_regex(tmp_path: Path) -> None:
     value = manifest()
     value["release_sources"][0]["artifact_regex"] = r"^(\d+)+$"  # type: ignore[index]

@@ -89,6 +89,50 @@ def test_manifest_provider_normalizes_x86_dash_64_architecture() -> None:
     assert detected.identity.architecture == "x86_64"
 
 
+def test_manifest_provider_can_require_iso_volume_metadata(tmp_path: Path) -> None:
+    value = manifest()
+    value["capabilities"]["architectures"] = ["amd64", "arm64"]  # type: ignore[index]
+    value["detection"] = [
+        {
+            "regex": r"^install79\.iso$",
+            "volume_regex": r"^OpenBSD/(?P<architecture>amd64|arm64)\s+7\.9 Install CD$",
+            "identity": {
+                "product_id": "example-live",
+                "edition": "desktop",
+                "channel": "stable",
+                "architecture": "$group:architecture",
+                "version": "7.9",
+            },
+            "downloadable": True,
+        }
+    ]
+    iso = tmp_path / "install79.iso"
+    descriptor = bytearray(2048)
+    descriptor[0] = 1
+    descriptor[1:6] = b"CD001"
+    descriptor[6] = 1
+    descriptor[40:72] = b"OpenBSD/arm64   7.9 Install CD".ljust(32, b" ")
+    iso.write_bytes(bytes(16 * 2048) + descriptor)
+
+    detected = ManifestProvider(value).detect(iso)
+
+    assert detected is not None and detected.identity is not None
+    assert detected.identity.architecture == "arm64"
+    assert detected.identity.version == "7.9"
+    assert detected.volume_id == "OpenBSD/arm64   7.9 Install CD"
+    assert detected.detection_source.endswith("iso9660-volume-id")
+
+
+def test_manifest_volume_detection_rejects_missing_metadata(tmp_path: Path) -> None:
+    value = manifest()
+    value["detection"][0]["regex"] = r"^install79\.iso$"  # type: ignore[index]
+    value["detection"][0]["volume_regex"] = r"^OpenBSD/amd64\s+7\.9 Install CD$"  # type: ignore[index]
+    path = tmp_path / "install79.iso"
+    path.write_bytes(b"not an ISO")
+
+    assert ManifestProvider(value).detect(path) is None
+
+
 def test_manifest_detection_regex_has_a_runtime_timeout() -> None:
     value = manifest()
     value["detection"] = [

@@ -36,6 +36,7 @@ BUILTIN_RESOLVER_IDS = frozenset(
         "opensuse-tumbleweed",
         "opensuse-leap",
         "freebsd",
+        "openbsd",
         "omarchy",
         "manjaro",
         "pop-os",
@@ -93,6 +94,7 @@ def resolve_release(provider_id: str, identity: IsoIdentity) -> ReleaseArtifact:
         "opensuse-tumbleweed": _opensuse_tumbleweed,
         "opensuse-leap": _opensuse_leap,
         "freebsd": _freebsd,
+        "openbsd": _openbsd,
         "omarchy": _omarchy,
         "manjaro": _manjaro,
         "pop-os": _pop_os,
@@ -1097,6 +1099,46 @@ def _freebsd(identity: IsoIdentity) -> ReleaseArtifact:
     checksum_name = f"CHECKSUM.SHA256-FreeBSD-{version}-RELEASE-{identity.architecture}"
     checksum = _checksum(_text(client, base + checksum_name), filename, "sha256")
     return _artifact(identity, version, filename, base + filename, "sha256", checksum, {host})
+
+
+def _openbsd(identity: IsoIdentity) -> ReleaseArtifact:
+    architectures = {
+        "alpha",
+        "amd64",
+        "arm64",
+        "hppa",
+        "i386",
+        "loongson",
+        "macppc",
+        "powerpc64",
+        "sparc64",
+    }
+    if (
+        identity.edition not in {"install", "bootonly"}
+        or identity.architecture not in architectures
+    ):
+        raise ProviderError("This OpenBSD medium or architecture is not supported.")
+    host = "cdn.openbsd.org"
+    client = SafeHttpClient(frozenset({host}))
+    root = f"https://{host}/pub/OpenBSD/"
+    releases = re.findall(r'href=["\'](?P<version>\d+\.\d+)/["\']', _text(client, root))
+    if not releases:
+        raise ProviderError("The official OpenBSD directory contains no releases.")
+    version = max(releases, key=_version_key)
+    compact = version.replace(".", "")
+    upstream_name = f"{'install' if identity.edition == 'install' else 'cd'}{compact}.iso"
+    base = f"{root}{version}/{identity.architecture}/"
+    checksum = _checksum(_text(client, base + "SHA256"), upstream_name, "sha256")
+    filename = f"OpenBSD-{version}-{identity.architecture}-{identity.edition}.iso"
+    return _artifact(
+        identity,
+        version,
+        filename,
+        base + upstream_name,
+        "sha256",
+        checksum,
+        {host},
+    )
 
 
 def _omarchy(identity: IsoIdentity) -> ReleaseArtifact:

@@ -35,7 +35,13 @@ class ManifestProvider(Provider):
         )
         self._products = tuple(str(item).lower() for item in capabilities["products"])
         self._rules = tuple(
-            (regex.compile(str(rule["regex"]), regex.IGNORECASE), rule)
+            (
+                regex.compile(str(rule["regex"]), regex.IGNORECASE),
+                regex.compile(str(rule["volume_regex"]), regex.IGNORECASE)
+                if rule.get("volume_regex")
+                else None,
+                rule,
+            )
             for rule in manifest["detection"]
         )
         self._blocked_variants: set[
@@ -47,15 +53,39 @@ class ManifestProvider(Provider):
         return self._products
 
     def detect(self, path: Path) -> DetectedIso | None:
-        for expression, rule in self._rules:
+        volume_id: str | None = None
+        volume_read = False
+        for expression, volume_expression, rule in self._rules:
             try:
                 match = expression.fullmatch(path.name, timeout=0.05)
             except TimeoutError:
                 continue
             if match is None:
                 continue
+            groups = match.groupdict()
+            if volume_expression is not None:
+                if not volume_read:
+                    from ..iso import read_iso_volume_id
+
+                    volume_id = read_iso_volume_id(path)
+                    volume_read = True
+                if volume_id is None:
+                    continue
+                try:
+                    volume_match = volume_expression.fullmatch(volume_id, timeout=0.05)
+                except TimeoutError:
+                    continue
+                if volume_match is None:
+                    continue
+                groups.update(
+                    {
+                        key: value
+                        for key, value in volume_match.groupdict().items()
+                        if value is not None
+                    }
+                )
             values = {
-                field: _resolve_value(value, match) for field, value in rule["identity"].items()
+                field: _resolve_value(value, groups) for field, value in rule["identity"].items()
             }
             identity = IsoIdentity(
                 provider_id=self.provider_id,
@@ -70,7 +100,14 @@ class ManifestProvider(Provider):
             )
             if not rule["downloadable"]:
                 self._blocked_variants.add(identity.variant_key())
-            return DetectedIso(path, identity, 0.98, "signed-registry-filename")
+            source = (
+                "signed-registry-filename+iso9660-volume-id"
+                if volume_expression is not None
+                else "signed-registry-filename"
+            )
+            return DetectedIso(
+                path, identity, 1.0 if volume_expression else 0.98, source, volume_id=volume_id
+            )
         return None
 
     def resolve(self, identity: IsoIdentity) -> ReleaseArtifact:
@@ -408,9 +445,9 @@ def _embedded_digest(metadata: str, filename: str, algorithm: str) -> str | None
     return walk(payload)
 
 
-def _resolve_value(value: Any, match: re.Match[str]) -> Any:
+def _resolve_value(value: Any, groups: dict[str, str | None]) -> Any:
     if isinstance(value, str) and value.startswith("$group:"):
-        return match.groupdict().get(value.removeprefix("$group:"))
+        return groups.get(value.removeprefix("$group:"))
     return value
 
 

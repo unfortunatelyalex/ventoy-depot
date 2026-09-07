@@ -19,6 +19,44 @@ def test_checksum_parser_accepts_plain_and_bsd_formats() -> None:
     assert resolvers._checksum(f"SHA256 ({filename}) = {digest}\n", filename, "sha256") == digest
 
 
+@pytest.mark.parametrize(
+    ("edition", "architecture", "upstream_name"),
+    [
+        ("install", "amd64", "install79.iso"),
+        ("bootonly", "arm64", "cd79.iso"),
+    ],
+)
+def test_openbsd_resolver_preserves_medium_and_architecture(
+    monkeypatch, edition: str, architecture: str, upstream_name: str
+) -> None:
+    digest = "7" * 64
+    base = f"https://cdn.openbsd.org/pub/OpenBSD/7.9/{architecture}/"
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, requested: str) -> bytes:
+            if requested == "https://cdn.openbsd.org/pub/OpenBSD/":
+                return b'<a href="7.8/">7.8/</a><a href="7.9/">7.9/</a>'
+            assert requested == base + "SHA256"
+            return f"SHA256 ({upstream_name}) = {digest}\n".encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "openbsd", "openbsd", edition, None, "release", architecture, None, "7.8", None
+    )
+
+    artifact = resolvers.resolve_release("openbsd", installed)
+
+    assert artifact.version == "7.9"
+    assert artifact.filename == f"OpenBSD-7.9-{architecture}-{edition}.iso"
+    assert artifact.download_url == base + upstream_name
+    assert artifact.checksum == digest
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()
+
+
 def test_pop_os_uses_official_variant_api(monkeypatch) -> None:
     payload = {
         "version": "24.04",

@@ -68,7 +68,7 @@
     },
     "detectionRule": {
       "type": "object", "additionalProperties": false, "required": ["regex", "identity", "downloadable"],
-      "properties": {"regex": {"type": "string", "maxLength": 512}, "identity": {"$ref": "#/$defs/identity"}, "downloadable": {"type": "boolean"}}
+      "properties": {"regex": {"type": "string", "maxLength": 512}, "volume_regex": {"type": "string", "maxLength": 512}, "identity": {"$ref": "#/$defs/identity"}, "downloadable": {"type": "boolean"}}
     }
   }
 }
