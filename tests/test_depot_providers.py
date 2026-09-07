@@ -65,6 +65,12 @@ from ventoy_depot.providers.builtin import BUILTIN_PROVIDERS
         ("mt86plus_8.10_x86_64.grub.iso", "memtest86-plus", "grub", "x86_64"),
         ("alpine-standard-3.24.1-x86_64.iso", "alpine", "standard", "x86_64"),
         (
+            "chimera-linux-riscv64-LIVE-20251220-plasma.iso",
+            "chimera-linux",
+            "plasma",
+            "riscv64",
+        ),
+        (
             "openSUSE-Tumbleweed-Rescue-CD-x86_64-Snapshot20260830-Media.iso",
             "opensuse-tumbleweed",
             "rescue-cd",

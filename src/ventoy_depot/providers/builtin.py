@@ -271,6 +271,27 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
         ),
     ),
     FilenameProvider(
+        "chimera-linux",
+        "Chimera Linux",
+        (
+            FilenameRule(
+                re.compile(
+                    r"chimera-linux-(?P<architecture>aarch64|loongarch64|ppc|ppc64|"
+                    r"ppc64le|riscv64|x86_64)-LIVE-(?P<version>\d{8})-"
+                    r"(?P<edition>base|gnome|plasma)\.iso$",
+                    re.I,
+                ),
+                "chimera-linux",
+            ),
+        ),
+        ProviderCapabilities(
+            ("base", "gnome", "plasma"),
+            ("aarch64", "loongarch64", "ppc", "ppc64", "ppc64le", "riscv64", "x86_64"),
+            (),
+            ("stable",),
+        ),
+    ),
+    FilenameProvider(
         "rocky-linux",
         "Rocky Linux",
         (

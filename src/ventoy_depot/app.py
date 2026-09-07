@@ -247,6 +247,7 @@ class OfficialLinkDialog(ModalScreen[tuple[str, str] | None]):
 
 _ASSIGNMENT_PROFILES = (
     ("Alpine Linux", "alpine", "alpine-linux", "x86_64"),
+    ("Chimera Linux", "chimera-linux", "chimera-linux", "x86_64"),
     ("Rocky Linux", "rocky-linux", "rocky-linux", "x86_64"),
     ("AlmaLinux OS", "almalinux", "almalinux", "x86_64"),
     ("Oracle Linux", "oracle-linux", "oracle-linux", "x86_64"),
@@ -352,6 +353,7 @@ _VOLUME_PROFILE_HINTS = (
     ("DEBIAN", "debian"),
     ("UBUNTU", "ubuntu"),
     ("ARCH", "arch"),
+    ("CHIMERA", "chimera-linux"),
 )
 
 

@@ -57,6 +57,49 @@ def test_openbsd_resolver_preserves_medium_and_architecture(
     assert artifact.identity.variant_key() == installed.variant_key()
 
 
+@pytest.mark.parametrize(
+    ("edition", "architecture"),
+    [("base", "ppc"), ("gnome", "aarch64"), ("plasma", "riscv64")],
+)
+def test_chimera_linux_resolver_preserves_desktop_and_architecture(
+    monkeypatch, edition: str, architecture: str
+) -> None:
+    filename = f"chimera-linux-{architecture}-LIVE-20251220-{edition}.iso"
+    digest = "c" * 64
+    base = "https://repo.chimera-linux.org/live/latest/"
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, requested: str) -> bytes:
+            if requested == base:
+                return f'<a href="{filename}">{filename}</a>'.encode()
+            assert requested == base + "sha256sums.txt"
+            return f"{digest}  {filename}\n".encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "chimera-linux",
+        "chimera-linux",
+        edition,
+        None,
+        "stable",
+        architecture,
+        None,
+        "20250214",
+        None,
+    )
+
+    artifact = resolvers.resolve_release("chimera-linux", installed)
+
+    assert artifact.version == "20251220"
+    assert artifact.filename == filename
+    assert artifact.checksum == digest
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()
+
+
 def test_pop_os_uses_official_variant_api(monkeypatch) -> None:
     payload = {
         "version": "24.04",

@@ -13,6 +13,7 @@ BUILTIN_RESOLVER_IDS = frozenset(
     {
         "arch",
         "alpine",
+        "chimera-linux",
         "rocky-linux",
         "almalinux",
         "oracle-linux",
@@ -71,6 +72,7 @@ def resolve_release(provider_id: str, identity: IsoIdentity) -> ReleaseArtifact:
     resolvers = {
         "arch": _arch,
         "alpine": _alpine,
+        "chimera-linux": _chimera_linux,
         "rocky-linux": _rocky_linux,
         "almalinux": _almalinux,
         "oracle-linux": _oracle_linux,
@@ -290,6 +292,38 @@ def _enterprise_linux(
         _checksum(sums, filename, "sha256"),
         {host},
     )
+
+
+def _chimera_linux(identity: IsoIdentity) -> ReleaseArtifact:
+    architectures = {
+        "aarch64",
+        "loongarch64",
+        "ppc",
+        "ppc64",
+        "ppc64le",
+        "riscv64",
+        "x86_64",
+    }
+    if (
+        identity.edition not in {"base", "gnome", "plasma"}
+        or identity.architecture not in architectures
+    ):
+        raise ProviderError("This Chimera Linux desktop or architecture is not supported.")
+    host = "repo.chimera-linux.org"
+    client = SafeHttpClient(frozenset({host}))
+    base = f"https://{host}/live/latest/"
+    expression = re.compile(
+        rf"(?P<filename>chimera-linux-{re.escape(identity.architecture)}-LIVE-"
+        rf"(?P<version>\d{{8}})-{re.escape(identity.edition)}\.iso)\b",
+        re.IGNORECASE,
+    )
+    matches = list(expression.finditer(_text(client, base)))
+    if not matches:
+        raise ProviderError("The Chimera Linux release index lacks this ISO variant.")
+    match = max(matches, key=lambda item: _version_key(item.group("version")))
+    filename, version = match.group("filename"), match.group("version")
+    checksum = _checksum(_text(client, base + "sha256sums.txt"), filename, "sha256")
+    return _artifact(identity, version, filename, base + filename, "sha256", checksum, {host})
 
 
 def _rocky_linux(identity: IsoIdentity) -> ReleaseArtifact:
