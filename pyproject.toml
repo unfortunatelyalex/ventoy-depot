@@ -32,7 +32,7 @@ ventoy-depot = "ventoy_depot.cli:main"
 ventoy-iso-updater = "ventoy_depot.compat:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/ventoy_depot", "src/ventoy_iso_updater"]
+packages = ["src/ventoy_depot"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
