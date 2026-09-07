@@ -2471,3 +2471,127 @@ def test_mx_linux_resolver_preserves_desktop_and_ahs_variant(
     assert artifact.download_url.endswith(f"/{directory}/{filename}/download?use_mirror=netix")
     assert artifact.identity is not None
     assert artifact.identity.variant_key() == installed.variant_key()
+
+
+def test_caine_resolver_uses_official_sha256(monkeypatch) -> None:
+    filename = "caine14.0.iso"
+    digest = "f" * 64
+    host = "www.caine-live.net"
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, requested: str) -> bytes:
+            if requested == f"https://{host}/page5/page5.html":
+                return b"caine13.0.iso caine14.0.iso"
+            assert requested == f"https://{host}/page5/{filename}.sha256.txt"
+            return f"{digest}  {filename}\n".encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "caine",
+        "caine",
+        "forensics-live",
+        None,
+        "stable",
+        "x86_64",
+        None,
+        "13.0",
+        None,
+    )
+
+    artifact = resolvers.resolve_release("caine", installed)
+
+    assert artifact.version == "14.0"
+    assert artifact.filename == filename
+    assert artifact.download_url == f"https://{host}/Downloads/{filename}"
+    assert artifact.checksum == digest
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()
+
+
+@pytest.mark.parametrize(
+    ("edition", "suffix"),
+    [
+        ("kde", "KDE"),
+        ("lxqt", "LXQT"),
+        ("mate", "MATE"),
+        ("xfce", "XFCE"),
+        ("system-rescue", "SR"),
+        ("netinst", "NETINST"),
+    ],
+)
+def test_kaisen_linux_resolver_preserves_variant(monkeypatch, edition: str, suffix: str) -> None:
+    filename = f"kaisenlinuxrolling3.0-amd64-{suffix}.iso"
+    digest = "1" * 64
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, requested: str) -> bytes:
+            assert requested == "https://kaisenlinux.org/checksums.txt"
+            return (
+                f"kaisenlinuxrolling2.3-amd64-{suffix}.iso => {'2' * 64}\n{filename} => {digest}\n"
+            ).encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "kaisen-linux",
+        "kaisen-linux",
+        edition,
+        None,
+        "rolling",
+        "amd64",
+        None,
+        "2.3",
+        None,
+    )
+
+    artifact = resolvers.resolve_release("kaisen-linux", installed)
+
+    assert artifact.version == "3.0"
+    assert artifact.filename == filename
+    assert artifact.checksum == digest
+    assert artifact.download_url == f"https://iso.kaisenlinux.org/rolling/{filename}"
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()
+
+
+def test_casuarina_linux_resolver_uses_release_bound_sha256(monkeypatch) -> None:
+    filename = "casuarina-linux-x86_64-LIVE-20260518-base.iso"
+    digest = "3" * 64
+    base = "https://repo.casuarina.org/live/20260518/"
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, requested: str) -> bytes:
+            if requested == "https://casuarina.org/download/":
+                return f"{filename}\n".encode()
+            assert requested == base + "sha256sums.txt"
+            return f"{digest}  {filename}\n".encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "casuarina-linux",
+        "casuarina-linux",
+        "base",
+        None,
+        "preview",
+        "x86_64",
+        None,
+        "20260101",
+        None,
+    )
+
+    artifact = resolvers.resolve_release("casuarina-linux", installed)
+
+    assert artifact.version == "20260518"
+    assert artifact.filename == filename
+    assert artifact.download_url == base + filename
+    assert artifact.checksum == digest
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()

@@ -79,6 +79,9 @@ BUILTIN_RESOLVER_IDS = frozenset(
         "talos-linux",
         "antix",
         "mx-linux",
+        "caine",
+        "kaisen-linux",
+        "casuarina-linux",
     }
 )
 
@@ -153,6 +156,9 @@ def resolve_release(provider_id: str, identity: IsoIdentity) -> ReleaseArtifact:
         "talos-linux": _talos_linux,
         "antix": _antix,
         "mx-linux": _mx_linux,
+        "caine": _caine,
+        "kaisen-linux": _kaisen_linux,
+        "casuarina-linux": _casuarina_linux,
     }
     try:
         resolver = resolvers[provider_id]
@@ -2772,6 +2778,104 @@ def _mx_linux(identity: IsoIdentity) -> ReleaseArtifact:
         version,
         filename,
         download_url,
+        "sha256",
+        checksum,
+        hosts,
+    )
+
+
+def _caine(identity: IsoIdentity) -> ReleaseArtifact:
+    if identity.product_id != "caine" or identity.edition != "forensics-live":
+        raise ProviderError("This CAINE medium is not supported.")
+    if identity.architecture != "x86_64" or identity.channel != "stable":
+        raise ProviderError("CAINE automatic updates support stable x86_64 ISOs only.")
+    host = "www.caine-live.net"
+    client = SafeHttpClient(frozenset({host}))
+    page = _text(client, f"https://{host}/page5/page5.html")
+    versions = re.findall(r"\bcaine(?P<version>\d+(?:\.\d+)*)\.iso\b", page, re.IGNORECASE)
+    if not versions:
+        raise ProviderError("The official CAINE page contains no release ISO.")
+    version = max(set(versions), key=_version_key)
+    filename = f"caine{version}.iso"
+    base = f"https://{host}/Downloads/"
+    checksum_url = f"https://{host}/page5/{filename}.sha256.txt"
+    checksum = _checksum(_text(client, checksum_url), filename, "sha256")
+    return _artifact(
+        identity,
+        version,
+        filename,
+        base + filename,
+        "sha256",
+        checksum,
+        {host},
+    )
+
+
+def _kaisen_linux(identity: IsoIdentity) -> ReleaseArtifact:
+    editions = {"kde", "lxqt", "mate", "xfce", "system-rescue", "netinst"}
+    if identity.product_id != "kaisen-linux" or identity.edition not in editions:
+        raise ProviderError("This Kaisen Linux medium is not supported.")
+    if identity.architecture != "amd64" or identity.channel != "rolling":
+        raise ProviderError("Kaisen Linux automatic updates support rolling amd64 ISOs only.")
+    hosts = {"kaisenlinux.org", "iso.kaisenlinux.org"}
+    client = SafeHttpClient(frozenset(hosts))
+    checksums = _text(client, "https://kaisenlinux.org/checksums.txt")
+    suffix = {
+        "kde": "KDE",
+        "lxqt": "LXQT",
+        "mate": "MATE",
+        "xfce": "XFCE",
+        "system-rescue": "SR",
+        "netinst": "NETINST",
+    }[identity.edition]
+    expression = re.compile(
+        rf"\b(kaisenlinuxrolling(?P<version>\d+(?:\.\d+)*)-amd64-"
+        rf"{suffix}\.iso)\b",
+        re.IGNORECASE,
+    )
+    matches = list(expression.finditer(checksums))
+    if not matches:
+        raise ProviderError("The official Kaisen checksum list lacks this ISO variant.")
+    match = max(matches, key=lambda item: _version_key(item.group("version")))
+    filename = match.group(1)
+    version = match.group("version")
+    checksum = _checksum(checksums, filename, "sha256")
+    return _artifact(
+        identity,
+        version,
+        filename,
+        f"https://iso.kaisenlinux.org/rolling/{filename}",
+        "sha256",
+        checksum,
+        hosts,
+    )
+
+
+def _casuarina_linux(identity: IsoIdentity) -> ReleaseArtifact:
+    if identity.product_id != "casuarina-linux" or identity.edition != "base":
+        raise ProviderError("This Casuarina Linux medium is not supported.")
+    if identity.architecture != "x86_64" or identity.channel != "preview":
+        raise ProviderError("Casuarina automatic updates support preview x86_64 ISOs only.")
+    hosts = {"casuarina.org", "repo.casuarina.org"}
+    client = SafeHttpClient(frozenset(hosts))
+    page = _text(client, "https://casuarina.org/download/")
+    expression = re.compile(
+        r"\b(casuarina-linux-x86_64-LIVE-(?P<version>\d{8})-base\.iso)\b",
+        re.IGNORECASE,
+    )
+    matches = list(expression.finditer(page))
+    if not matches:
+        raise ProviderError("The official Casuarina page contains no preview ISO.")
+    match = max(matches, key=lambda item: item.group("version"))
+    filename = match.group(1)
+    version = match.group("version")
+    base = f"https://repo.casuarina.org/live/{version}/"
+    checksum = _checksum(_text(client, base + "sha256sums.txt"), filename, "sha256")
+    return _artifact(
+        identity,
+        version,
+        filename,
+        base + filename,
         "sha256",
         checksum,
         hosts,

@@ -2082,4 +2082,75 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
             ("standard", "ahs"),
         ),
     ),
+    FilenameProvider(
+        "caine",
+        "CAINE",
+        (
+            FilenameRule(
+                re.compile(r"caine(?P<version>\d+(?:\.\d+)*)\.iso$", re.I),
+                "caine",
+                default_edition="forensics-live",
+                default_architecture="x86_64",
+            ),
+        ),
+        ProviderCapabilities(("forensics-live",), ("x86_64",), (), ("stable",)),
+    ),
+    FilenameProvider(
+        "kaisen-linux",
+        "Kaisen Linux",
+        (
+            FilenameRule(
+                re.compile(
+                    r"kaisenlinuxrolling(?P<version>\d+(?:\.\d+)*)-amd64-"
+                    r"(?P<edition>KDE|LXQT|MATE|XFCE)\.iso$",
+                    re.I,
+                ),
+                "kaisen-linux",
+                default_channel="rolling",
+                default_architecture="amd64",
+            ),
+            FilenameRule(
+                re.compile(
+                    r"kaisenlinuxrolling(?P<version>\d+(?:\.\d+)*)-amd64-SR\.iso$",
+                    re.I,
+                ),
+                "kaisen-linux",
+                default_channel="rolling",
+                default_architecture="amd64",
+                default_edition="system-rescue",
+            ),
+            FilenameRule(
+                re.compile(
+                    r"kaisenlinuxrolling(?P<version>\d+(?:\.\d+)*)-amd64-NETINST\.iso$",
+                    re.I,
+                ),
+                "kaisen-linux",
+                default_channel="rolling",
+                default_architecture="amd64",
+                default_edition="netinst",
+            ),
+        ),
+        ProviderCapabilities(
+            ("kde", "lxqt", "mate", "xfce", "system-rescue", "netinst"),
+            ("amd64",),
+            (),
+            ("rolling",),
+        ),
+    ),
+    FilenameProvider(
+        "casuarina-linux",
+        "Casuarina Linux",
+        (
+            FilenameRule(
+                re.compile(
+                    r"casuarina-linux-(?P<architecture>x86_64)-LIVE-"
+                    r"(?P<version>\d{8})-(?P<edition>base)\.iso$",
+                    re.I,
+                ),
+                "casuarina-linux",
+                default_channel="preview",
+            ),
+        ),
+        ProviderCapabilities(("base",), ("x86_64",), (), ("preview",)),
+    ),
 )

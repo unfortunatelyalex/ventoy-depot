@@ -225,6 +225,21 @@ from ventoy_depot.providers.builtin import BUILTIN_PROVIDERS
         ("MX-25.2_Xfce_ahs_x64.iso", "mx-linux", "xfce", "x86_64"),
         ("MX-25.2_KDE_x64.iso", "mx-linux", "kde", "x86_64"),
         ("MX-25.2_fluxbox_x64.iso", "mx-linux", "fluxbox", "x86_64"),
+        ("caine14.0.iso", "caine", "forensics-live", "x86_64"),
+        ("kaisenlinuxrolling3.0-amd64-KDE.iso", "kaisen-linux", "kde", "amd64"),
+        (
+            "kaisenlinuxrolling3.0-amd64-SR.iso",
+            "kaisen-linux",
+            "system-rescue",
+            "amd64",
+        ),
+        ("kaisenlinuxrolling3.0-amd64-NETINST.iso", "kaisen-linux", "netinst", "amd64"),
+        (
+            "casuarina-linux-x86_64-LIVE-20260518-base.iso",
+            "casuarina-linux",
+            "base",
+            "x86_64",
+        ),
     ],
 )
 def test_variant_preserving_detection(
