@@ -115,6 +115,9 @@ def test_manual_mountpoint_requires_marker_and_selects_valid_path(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     monkeypatch.setattr("ventoy_depot.app.discover_ventoy_devices", lambda: [])
+    monkeypatch.setattr(
+        "ventoy_depot.devices._manual_stable_identifier", lambda _path: "linux-uuid:test"
+    )
     (tmp_path / ".ventoy").write_text("marker", encoding="utf-8")
 
     async def exercise() -> None:
@@ -123,7 +126,7 @@ def test_manual_mountpoint_requires_marker_and_selects_valid_path(
             app._manual_mount_chosen(tmp_path)
             await pilot.pause()
             selected = app.query_one("#device").value
-            assert selected == str(tmp_path.resolve())
+            assert selected == "manual:linux-uuid:test"
             assert app.query_one("#scan", Button).disabled is False
             assert app.devices[str(selected)].detection_reason == "ventoy-marker"
 

@@ -29,6 +29,13 @@ from ventoy_depot.transfer import (
 )
 
 
+@pytest.fixture(autouse=True)
+def stable_manual_test_volume(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "ventoy_depot.devices._manual_stable_identifier", lambda _path: "linux-uuid:test"
+    )
+
+
 class Response:
     status = 200
 
