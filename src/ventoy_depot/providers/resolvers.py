@@ -12,6 +12,7 @@ from .base import ProviderError
 BUILTIN_RESOLVER_IDS = frozenset(
     {
         "arch",
+        "adelie-linux",
         "artix-linux",
         "backbox",
         "alpine",
@@ -33,6 +34,7 @@ BUILTIN_RESOLVER_IDS = frozenset(
         "alt-rescue",
         "urbackup-restore",
         "kali-linux",
+        "kaos",
         "nixos",
         "nobara",
         "systemrescue",
@@ -75,6 +77,7 @@ BUILTIN_RESOLVER_IDS = frozenset(
 def resolve_release(provider_id: str, identity: IsoIdentity) -> ReleaseArtifact:
     resolvers = {
         "arch": _arch,
+        "adelie-linux": _adelie_linux,
         "artix-linux": _artix_linux,
         "backbox": _backbox,
         "alpine": _alpine,
@@ -96,6 +99,7 @@ def resolve_release(provider_id: str, identity: IsoIdentity) -> ReleaseArtifact:
         "alt-rescue": _alt_rescue,
         "urbackup-restore": _urbackup_restore,
         "kali-linux": _kali_linux,
+        "kaos": _kaos,
         "nixos": _nixos,
         "nobara": _nobara,
         "systemrescue": _systemrescue,
@@ -218,6 +222,48 @@ def _arch(identity: IsoIdentity) -> ReleaseArtifact:
         "sha256",
         _checksum(sums, filename, "sha256"),
         {"geo.mirror.pkgbuild.com"},
+    )
+
+
+def _adelie_linux(identity: IsoIdentity) -> ReleaseArtifact:
+    architectures = {"aarch64", "armv7", "pmmx", "ppc", "ppc64", "x86_64"}
+    if identity.architecture not in architectures or identity.channel != "beta":
+        raise ProviderError("This Adélie Linux architecture or release channel is unsupported.")
+    if identity.edition == "inst":
+        prefix = f"adelie-inst-{identity.architecture}"
+        if identity.flavor is not None:
+            raise ProviderError("Adélie installer ISOs do not have a desktop flavor.")
+    elif identity.edition == "live" and identity.flavor in {"kde", "lxqt", "mate", "xfce"}:
+        prefix = f"adelie-live-{identity.flavor}-{identity.architecture}"
+    else:
+        raise ProviderError("This Adélie Linux ISO edition or desktop is unsupported.")
+    host = "distfiles.adelielinux.org"
+    client = SafeHttpClient(frozenset({host}))
+    base = f"https://{host}/adelie/current/iso/"
+    expression = re.compile(
+        rf"\b(?P<filename>{re.escape(prefix)}-(?P<version>\d+\.\d+-beta\d+)-"
+        rf"(?P<build>\d{{8}})\.iso)\b",
+        re.IGNORECASE,
+    )
+    matches = list(expression.finditer(_text(client, base)))
+    if not matches:
+        raise ProviderError("The Adélie current directory lacks this ISO variant.")
+    match = max(matches, key=lambda item: _version_key(item.group("build")))
+    filename, version, build = (
+        match.group("filename"),
+        match.group("version"),
+        match.group("build"),
+    )
+    sums = _text(client, base + "SHA512SUMS")
+    return _artifact(
+        identity,
+        version,
+        filename,
+        base + filename,
+        "sha512",
+        _checksum(sums, filename, "sha512"),
+        {host},
+        build=build,
     )
 
 
@@ -991,6 +1037,47 @@ def _kali_linux(identity: IsoIdentity) -> ReleaseArtifact:
         base + filename,
         "sha256",
         _checksum(sums, filename, "sha256"),
+        hosts,
+    )
+
+
+def _kaos(identity: IsoIdentity) -> ReleaseArtifact:
+    if identity.architecture != "x86_64" or identity.channel != "stable":
+        raise ProviderError("KaOS automatic updates support stable x86_64 media only.")
+    if identity.edition != "dinit":
+        raise ProviderError(
+            "The historical KaOS systemd image cannot be changed to Dinit automatically."
+        )
+    hosts = {"kaosx.us", "kaosx-eu.yourhostingsolutions.com"}
+    client = SafeHttpClient(frozenset(hosts))
+    # The slashless URL currently redirects through plain HTTP before returning to HTTPS.
+    # Address the canonical HTTPS path directly so the shared client never weakens transport.
+    page = _text(client, "https://kaosx.us/download/")
+    expression = re.compile(
+        r"(?P<url>https://kaosx-eu\.yourhostingsolutions\.com/"
+        r"(?P<filename>KaOS-DINIT-(?P<version>\d{4}\.\d{2})-x86_64\.iso))\b",
+        re.IGNORECASE,
+    )
+    matches = list(expression.finditer(page))
+    if not matches:
+        raise ProviderError("The official KaOS page lacks the current Dinit ISO link.")
+    match = max(matches, key=lambda item: _version_key(item.group("version")))
+    filename, version = match.group("filename"), match.group("version")
+    digest_match = re.search(
+        rf"SHA256SUM\s+KaOS-DINIT\s+{re.escape(version)}.{{0,2000}}?"
+        r"(?P<hash>[A-Fa-f0-9]{64})",
+        page,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if digest_match is None:
+        raise ProviderError("The official KaOS page lacks the selected ISO SHA-256 value.")
+    return _artifact(
+        identity,
+        version,
+        filename,
+        match.group("url"),
+        "sha256",
+        digest_match.group("hash").lower(),
         hosts,
     )
 

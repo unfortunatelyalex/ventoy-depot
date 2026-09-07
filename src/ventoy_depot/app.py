@@ -246,6 +246,7 @@ class OfficialLinkDialog(ModalScreen[tuple[str, str] | None]):
 
 
 _ASSIGNMENT_PROFILES = (
+    ("Adélie Linux", "adelie-linux", "adelie-linux", "x86_64"),
     ("Alpine Linux", "alpine", "alpine-linux", "x86_64"),
     ("Chimera Linux", "chimera-linux", "chimera-linux", "x86_64"),
     ("Rocky Linux", "rocky-linux", "rocky-linux", "x86_64"),
@@ -276,6 +277,7 @@ _ASSIGNMENT_PROFILES = (
     ("ALT Rescue", "alt-rescue", "alt-rescue", "x86_64"),
     ("UrBackup Restore Stick", "urbackup-restore", "urbackup-restore", "x86_64"),
     ("Kali Linux", "kali-linux", "kali-linux", "amd64"),
+    ("KaOS", "kaos", "kaos", "x86_64"),
     ("NixOS", "nixos", "nixos", "x86_64"),
     ("CachyOS", "cachyos", "cachyos", "x86_64"),
     ("Clonezilla Live", "clonezilla", "clonezilla-live", "amd64"),
@@ -324,6 +326,7 @@ _ASSIGNMENT_PROFILES = (
 )
 
 _VOLUME_PROFILE_HINTS = (
+    ("ADELIE", "adelie-linux"),
     ("ENDEAVOUR", "endeavouros"),
     ("SYSTEMRESCUE", "systemrescue"),
     ("RESCUEZILLA", "rescuezilla"),
@@ -354,6 +357,7 @@ _VOLUME_PROFILE_HINTS = (
     ("VANILLA", "vanilla-os"),
     ("ZORIN", "zorin-os"),
     ("KALI", "kali-linux"),
+    ("KAOS", "kaos"),
     ("NIXOS", "nixos"),
     ("FEDORA", "fedora"),
     ("DEBIAN", "debian"),

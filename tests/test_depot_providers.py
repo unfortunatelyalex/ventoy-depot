@@ -12,6 +12,15 @@ from ventoy_depot.providers.builtin import BUILTIN_PROVIDERS
 @pytest.mark.parametrize(
     ("filename", "provider", "edition", "architecture"),
     [
+        ("adelie-inst-x86_64-1.0-beta6-20241223.iso", "adelie-linux", "inst", "x86_64"),
+        (
+            "adelie-live-kde-aarch64-1.0-beta6-20241223.iso",
+            "adelie-linux",
+            "live",
+            "aarch64",
+        ),
+        ("KaOS-DINIT-2026.06-x86_64.iso", "kaos", "dinit", "x86_64"),
+        ("KaOS-2025.09-x86_64.iso", "kaos", "systemd", "x86_64"),
         ("ubuntu-24.04.3-live-server-amd64.iso", "ubuntu", "live-server", "amd64"),
         ("artix-base-openrc-20260813-x86_64.iso", "artix-linux", "base", "x86_64"),
         ("backbox-9-desktop-amd64.iso", "backbox", "desktop", "amd64"),

@@ -20,6 +20,93 @@ def test_checksum_parser_accepts_plain_and_bsd_formats() -> None:
 
 
 @pytest.mark.parametrize(
+    ("edition", "flavor", "architecture"),
+    [("inst", None, "x86_64"), ("live", "kde", "aarch64")],
+)
+def test_adelie_resolver_preserves_medium_desktop_and_architecture(
+    monkeypatch, edition: str, flavor: str | None, architecture: str
+) -> None:
+    prefix = (
+        f"adelie-inst-{architecture}"
+        if edition == "inst"
+        else f"adelie-live-{flavor}-{architecture}"
+    )
+    filename = f"{prefix}-1.0-beta6-20241223.iso"
+    digest = "a" * 128
+    base = "https://distfiles.adelielinux.org/adelie/current/iso/"
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, requested: str) -> bytes:
+            if requested == base:
+                return f'<a href="{filename}">{filename}</a>'.encode()
+            assert requested == base + "SHA512SUMS"
+            return f"{digest}  {filename}\n".encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "adelie-linux",
+        "adelie-linux",
+        edition,
+        flavor,
+        "beta",
+        architecture,
+        None,
+        "1.0-beta5",
+        "20240101",
+    )
+
+    artifact = resolvers.resolve_release("adelie-linux", installed)
+
+    assert artifact.version == "1.0-beta6"
+    assert artifact.build == "20241223"
+    assert artifact.filename == filename
+    assert artifact.checksum_algorithm == "sha512"
+    assert artifact.checksum == digest
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()
+
+
+def test_kaos_resolver_uses_official_dinit_mirror_and_embedded_sha256(monkeypatch) -> None:
+    filename = "KaOS-DINIT-2026.06-x86_64.iso"
+    url = f"https://kaosx-eu.yourhostingsolutions.com/{filename}"
+    digest = "b" * 64
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, requested: str) -> bytes:
+            assert requested == "https://kaosx.us/download/"
+            return f'<a href="{url}">{filename}</a> SHA256SUM KaOS-DINIT 2026.06 {digest}'.encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "kaos", "kaos", "dinit", None, "stable", "x86_64", None, "2026.05", None
+    )
+
+    artifact = resolvers.resolve_release("kaos", installed)
+
+    assert artifact.version == "2026.06"
+    assert artifact.filename == filename
+    assert artifact.download_url == url
+    assert artifact.checksum == digest
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()
+
+
+def test_kaos_resolver_blocks_historical_systemd_to_dinit_transition() -> None:
+    installed = IsoIdentity(
+        "kaos", "kaos", "systemd", None, "stable", "x86_64", None, "2025.09", None
+    )
+
+    with pytest.raises(resolvers.ProviderError, match="cannot be changed to Dinit"):
+        resolvers.resolve_release("kaos", installed)
+
+
+@pytest.mark.parametrize(
     ("edition", "architecture", "upstream_name"),
     [
         ("install", "amd64", "install79.iso"),

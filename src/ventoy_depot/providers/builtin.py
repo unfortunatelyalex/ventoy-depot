@@ -306,6 +306,61 @@ def _ubuntu_flavor_rules() -> tuple[FilenameRule, ...]:
 
 BUILTIN_PROVIDERS: tuple[Provider, ...] = (
     FilenameProvider(
+        "adelie-linux",
+        "Adélie Linux",
+        (
+            FilenameRule(
+                re.compile(
+                    r"adelie-(?P<edition>inst)-(?P<architecture>aarch64|armv7|pmmx|ppc|ppc64|x86_64)-"
+                    r"(?P<version>\d+\.\d+-beta\d+)-(?P<build>\d{8})\.iso$",
+                    re.I,
+                ),
+                "adelie-linux",
+                default_channel="beta",
+            ),
+            FilenameRule(
+                re.compile(
+                    r"adelie-(?P<edition>live)-(?P<flavor>kde|lxqt|mate|xfce)-"
+                    r"(?P<architecture>aarch64|armv7|pmmx|ppc|ppc64|x86_64)-"
+                    r"(?P<version>\d+\.\d+-beta\d+)-(?P<build>\d{8})\.iso$",
+                    re.I,
+                ),
+                "adelie-linux",
+                default_channel="beta",
+            ),
+        ),
+        ProviderCapabilities(
+            ("inst", "live"),
+            ("aarch64", "armv7", "pmmx", "ppc", "ppc64", "x86_64"),
+            (),
+            ("beta",),
+            ("kde", "lxqt", "mate", "xfce"),
+        ),
+    ),
+    FilenameProvider(
+        "kaos",
+        "KaOS",
+        (
+            FilenameRule(
+                re.compile(
+                    r"KaOS-(?P<edition>DINIT)-(?P<version>\d{4}\.\d{2})-"
+                    r"(?P<architecture>x86_64)\.iso$",
+                    re.I,
+                ),
+                "kaos",
+            ),
+            FilenameRule(
+                re.compile(
+                    r"KaOS-(?P<version>\d{4}\.\d{2})-(?P<architecture>x86_64)\.iso$",
+                    re.I,
+                ),
+                "kaos",
+                default_edition="systemd",
+            ),
+        ),
+        ProviderCapabilities(("dinit", "systemd"), ("x86_64",), (), ("stable",)),
+    ),
+    FilenameProvider(
         "arch",
         "Arch Linux",
         (
