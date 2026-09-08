@@ -125,6 +125,10 @@ from ventoy_depot.providers.builtin import BUILTIN_PROVIDERS
         ("drift-linux-FAST-hybrid.iso", "drift-linux", "fast", "x86_64"),
         ("drift-linux-FAST-XS-hybrid.iso", "drift-linux", "fast-xs", "x86_64"),
         ("linux-lite-8.0-64bit.iso", "linux-lite", "desktop", "x86_64"),
+        ("tsurugi_linux_26.03.iso", "tsurugi-linux", "lab", "x86_64"),
+        ("tsurugi_acquire_2021.1.iso", "tsurugi-linux", "acquire", "i386"),
+        ("archbang-050926-x86_64.iso", "archbang", "desktop", "x86_64"),
+        ("archbang-220826.iso", "archbang", "desktop", "x86_64"),
         ("alpine-standard-3.24.1-x86_64.iso", "alpine", "standard", "x86_64"),
         (
             "chimera-linux-riscv64-LIVE-20251220-plasma.iso",

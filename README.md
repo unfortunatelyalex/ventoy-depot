@@ -53,14 +53,14 @@ Microsoft HTTPS hosts or a regular local file outside the Ventoy drive, and a fi
 product, language, architecture, edition and channel match the existing ISO, then uses the
 same confirmation and transactional transfer pipeline as other updates.
 
-Automatic official resolution currently covers Adélie Linux, antiX Linux, Arch Linux, Artix Linux, MX Linux, CAINE, Casuarina Linux,
+Automatic official resolution currently covers Adélie Linux, antiX Linux, Arch Linux, ArchBang, Artix Linux, MX Linux, CAINE, Casuarina Linux,
 BackBox Linux, BunsenLabs, Ubuntu, Kubuntu, Lubuntu,
 Xubuntu, Ubuntu Budgie, Ubuntu Unity, Ubuntu MATE, Ubuntu Cinnamon, Edubuntu,
 Ubuntu Studio, Ubuntu Kylin, Debian, Devuan, Fedora
 Workstation/Server/KDE, Fedora CoreOS, Flatcar Container Linux, Alpine Linux, Chimera Linux, Rocky Linux, AlmaLinux, Oracle Linux, CentOS Stream,
 Linux Mint stable editions,
 EndeavourOS, CachyOS, Clonezilla, Gentoo, GhostBSD, GParted Live, Grml, Haiku,
-deepin, DRIFT Linux, FreeDOS, Garuda Linux, Harvester HCI, Hiren's BootCD PE, Kali Linux, Kaisen Linux, KaOS, KDE neon, Linux Lite, Memtest86+, OPNsense, ReactOS, Security Onion, SparkyLinux, Talos Linux,
+deepin, DRIFT Linux, FreeDOS, Garuda Linux, Harvester HCI, Hiren's BootCD PE, Kali Linux, Kaisen Linux, KaOS, KDE neon, Linux Lite, Memtest86+, OPNsense, ReactOS, Security Onion, SparkyLinux, Talos Linux, Tsurugi Linux,
 netboot.xyz, NixOS, SystemRescue, Super Grub2 Disk, ALT Rescue, Finnix, UrBackup Restore Stick,
 OpenBSD, openSUSE Leap, openSUSE Tumbleweed, FreeBSD, OpenIndiana Hipster, OmniOS, Omarchy, Parrot OS,
 Pop!_OS, PorteuX, Mageia,

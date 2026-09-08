@@ -1442,6 +1442,44 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
         ProviderCapabilities(("desktop",), ("x86_64",), (), ("stable",)),
     ),
     FilenameProvider(
+        "tsurugi-linux",
+        "Tsurugi Linux",
+        (
+            FilenameRule(
+                re.compile(r"tsurugi_linux_(?P<version>\d+(?:\.\d+)+)\.iso$", re.I),
+                "tsurugi-linux",
+                default_edition="lab",
+                default_architecture="x86_64",
+            ),
+            FilenameRule(
+                re.compile(r"tsurugi_acquire_(?P<version>\d+(?:\.\d+)+)\.iso$", re.I),
+                "tsurugi-linux",
+                default_edition="acquire",
+                default_architecture="i386",
+            ),
+        ),
+        ProviderCapabilities(("lab", "acquire"), ("x86_64", "i386"), (), ("stable",)),
+    ),
+    FilenameProvider(
+        "archbang",
+        "ArchBang",
+        (
+            FilenameRule(
+                re.compile(
+                    r"archbang-(?P<day>\d{2})(?P<month>\d{2})(?P<year>\d{2})"
+                    r"(?:[-_]x86_64)?\.iso$",
+                    re.I,
+                ),
+                "archbang",
+                default_edition="desktop",
+                default_channel="rolling",
+                default_architecture="x86_64",
+                version_template="20{year}.{month}.{day}",
+            ),
+        ),
+        ProviderCapabilities(("desktop",), ("x86_64",), (), ("rolling",)),
+    ),
+    FilenameProvider(
         "vanilla-os",
         "Vanilla OS",
         (

@@ -91,6 +91,8 @@ BUILTIN_RESOLVER_IDS = frozenset(
         "sparkylinux",
         "drift-linux",
         "linux-lite",
+        "tsurugi-linux",
+        "archbang",
     }
 )
 
@@ -177,6 +179,8 @@ def resolve_release(provider_id: str, identity: IsoIdentity) -> ReleaseArtifact:
         "sparkylinux": _sparkylinux,
         "drift-linux": _drift_linux,
         "linux-lite": _linux_lite,
+        "tsurugi-linux": _tsurugi_linux,
+        "archbang": _archbang,
     }
     try:
         resolver = resolvers[provider_id]
@@ -3257,3 +3261,85 @@ def _linux_lite(identity: IsoIdentity) -> ReleaseArtifact:
     base = f"https://repo.linuxliteos.com/linuxlite/isos/{version}/"
     checksum = _checksum(_text(client, base + filename + ".sha256"), filename, "sha256")
     return _artifact(identity, version, filename, base + filename, "sha256", checksum, hosts)
+
+
+def _tsurugi_linux(identity: IsoIdentity) -> ReleaseArtifact:
+    variants = {
+        "lab": (
+            "x86_64",
+            re.compile(r"\b(tsurugi_linux_(?P<version>\d+(?:\.\d+)+)\.iso)\b", re.I),
+            "01.Tsurugi_Linux_%5bLAB%5d",
+        ),
+        "acquire": (
+            "i386",
+            re.compile(r"\b(tsurugi_acquire_(?P<version>\d+(?:\.\d+)+)\.iso)\b", re.I),
+            "02.Tsurugi_Acquire",
+        ),
+    }
+    if identity.product_id != "tsurugi-linux" or identity.edition not in variants:
+        raise ProviderError("This Tsurugi Linux edition is not supported automatically.")
+    architecture, expression, directory = variants[identity.edition]
+    if identity.architecture != architecture or identity.channel != "stable":
+        raise ProviderError("Tsurugi Linux architecture or release channel is not supported.")
+    hosts = {"tsurugi-linux.org", "ftp.nluug.nl"}
+    client = SafeHttpClient(frozenset(hosts))
+    page = _text(client, "https://tsurugi-linux.org/downloads.php")
+    matches = list(expression.finditer(page))
+    if not matches:
+        raise ProviderError("The official Tsurugi Linux page lacks this released edition.")
+    match = max(matches, key=lambda item: _version_key(item.group("version")))
+    filename = match.group(1)
+    version = match.group("version")
+    checksum = _checksum(
+        _text(client, "https://tsurugi-linux.org/signed_hashes.sha512"),
+        filename,
+        "sha512",
+    )
+    download = f"https://ftp.nluug.nl/os/Linux/distr/tsurugi/{directory}/{filename}"
+    return _artifact(identity, version, filename, download, "sha512", checksum, hosts)
+
+
+def _archbang(identity: IsoIdentity) -> ReleaseArtifact:
+    if identity.product_id != "archbang" or identity.edition != "desktop":
+        raise ProviderError("This ArchBang edition is not supported automatically.")
+    if identity.architecture != "x86_64" or identity.channel != "rolling":
+        raise ProviderError("ArchBang automatic updates support rolling x86_64 ISOs only.")
+    hosts = {
+        "archbang.org",
+        "sourceforge.net",
+        "downloads.sourceforge.net",
+        "netix.dl.sourceforge.net",
+    }
+    client = SafeHttpClient(frozenset(hosts))
+    payload = json.loads(
+        _text(client, "https://sourceforge.net/projects/archbang/best_release.json")
+    )
+    release = payload.get("release")
+    if not isinstance(release, dict):
+        raise ProviderError("The official ArchBang project metadata has no release.")
+    filename = str(release.get("filename", "")).rsplit("/", 1)[-1]
+    match = re.fullmatch(
+        r"archbang-(?P<day>\d{2})(?P<month>\d{2})(?P<year>\d{2})(?:[-_]x86_64)?\.iso",
+        filename,
+        re.I,
+    )
+    checksum = str(release.get("sha256sum", "")).lower()
+    if match is None or not re.fullmatch(r"[a-f0-9]{64}", checksum):
+        raise ProviderError("The official ArchBang metadata lacks a release-bound SHA-256.")
+    version = f"20{match.group('year')}.{match.group('month')}.{match.group('day')}"
+    size = release.get("bytes")
+    size_bytes = size if isinstance(size, int) and size >= 0 else None
+    download = (
+        f"https://sourceforge.net/projects/archbang/files/ArchBANG/{filename}/download"
+        "?use_mirror=netix"
+    )
+    return _artifact(
+        identity,
+        version,
+        filename,
+        download,
+        "sha256",
+        checksum,
+        hosts,
+        size_bytes=size_bytes,
+    )

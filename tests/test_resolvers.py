@@ -3019,3 +3019,94 @@ def test_linux_lite_resolver_uses_official_repository_sha256(monkeypatch) -> Non
     assert artifact.checksum == digest
     assert artifact.identity is not None
     assert artifact.identity.variant_key() == installed.variant_key()
+
+
+@pytest.mark.parametrize(
+    ("edition", "architecture", "filename", "directory"),
+    [
+        ("lab", "x86_64", "tsurugi_linux_26.03.iso", "01.Tsurugi_Linux_%5bLAB%5d"),
+        ("acquire", "i386", "tsurugi_acquire_2021.1.iso", "02.Tsurugi_Acquire"),
+    ],
+)
+def test_tsurugi_linux_resolver_uses_signed_sha512_list(
+    monkeypatch, edition: str, architecture: str, filename: str, directory: str
+) -> None:
+    digest = "8" * 128
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, requested: str) -> bytes:
+            if requested == "https://tsurugi-linux.org/downloads.php":
+                return f"Filename: {filename}".encode()
+            assert requested == "https://tsurugi-linux.org/signed_hashes.sha512"
+            return f"{digest}  {filename}\n".encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "tsurugi-linux",
+        "tsurugi-linux",
+        edition,
+        None,
+        "stable",
+        architecture,
+        None,
+        "1.0",
+        None,
+    )
+
+    artifact = resolvers.resolve_release("tsurugi-linux", installed)
+
+    assert artifact.filename == filename
+    assert artifact.download_url == (
+        f"https://ftp.nluug.nl/os/Linux/distr/tsurugi/{directory}/{filename}"
+    )
+    assert artifact.checksum_algorithm == "sha512"
+    assert artifact.checksum == digest
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()
+
+
+def test_archbang_resolver_formats_date_and_uses_sourceforge_sha256(monkeypatch) -> None:
+    filename = "archbang-050926-x86_64.iso"
+    digest = "9" * 64
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, requested: str) -> bytes:
+            assert requested == "https://sourceforge.net/projects/archbang/best_release.json"
+            return json.dumps(
+                {
+                    "release": {
+                        "filename": f"/ArchBANG/{filename}",
+                        "bytes": 123456789,
+                        "sha256sum": digest,
+                    }
+                }
+            ).encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "archbang",
+        "archbang",
+        "desktop",
+        None,
+        "rolling",
+        "x86_64",
+        None,
+        "2026.08.22",
+        None,
+    )
+
+    artifact = resolvers.resolve_release("archbang", installed)
+
+    assert artifact.version == "2026.09.05"
+    assert artifact.filename == filename
+    assert artifact.size_bytes == 123456789
+    assert artifact.checksum == digest
+    assert artifact.download_url.endswith(f"/{filename}/download?use_mirror=netix")
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()

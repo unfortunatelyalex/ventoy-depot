@@ -312,6 +312,8 @@ _ASSIGNMENT_PROFILES = (
     ("SparkyLinux", "sparkylinux", "sparkylinux", "x86_64"),
     ("DRIFT Linux", "drift-linux", "drift-linux", "x86_64"),
     ("Linux Lite", "linux-lite", "linux-lite", "x86_64"),
+    ("Tsurugi Linux", "tsurugi-linux", "tsurugi-linux", "x86_64"),
+    ("ArchBang", "archbang", "archbang", "x86_64"),
     ("Omarchy", "omarchy", "omarchy", "x86_64"),
     ("Manjaro", "manjaro", "manjaro", "x86_64"),
     ("Pop!_OS", "pop-os", "pop-os", "amd64"),
