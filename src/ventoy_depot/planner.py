@@ -131,7 +131,7 @@ def build_plan(
             errors.append("The Ventoy drive is not writable.")
             action = UpdateAction.SKIP
             replacement_allowed = False
-        required = target.size_bytes if target else None
+        required = target.installed_size_bytes if target else None
         if (
             required is not None
             and (action != UpdateAction.SKIP or replacement_allowed)
@@ -183,7 +183,7 @@ def build_add_plan(device: Device, identity: IsoIdentity, refresh: bool = False)
     if not os.access(device.mount_path, os.W_OK):
         errors.append("The Ventoy drive is not writable.")
     free = shutil.disk_usage(device.mount_path).free
-    if target.size_bytes is not None and target.size_bytes > free:
+    if target.installed_size_bytes is not None and target.installed_size_bytes > free:
         errors.append("Insufficient free space on the Ventoy drive.")
     action = UpdateAction.ADD if not errors else UpdateAction.SKIP
     local = DetectedIso(destination, identity, 1.0, "explicit-add-request")
@@ -192,7 +192,7 @@ def build_add_plan(device: Device, identity: IsoIdentity, refresh: bool = False)
         target,
         action,
         free,
-        target.size_bytes,
+        target.installed_size_bytes,
         target.verification_level,
         (),
         tuple(errors),

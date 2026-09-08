@@ -60,13 +60,13 @@ Ubuntu Studio, Ubuntu Kylin, Debian, Devuan, Fedora
 Workstation/Server/KDE, Fedora CoreOS, Flatcar Container Linux, Alpine Linux, Chimera Linux, Rocky Linux, AlmaLinux, Oracle Linux, CentOS Stream,
 Linux Mint stable editions,
 EndeavourOS, CachyOS, Clonezilla, Gentoo, GhostBSD, GParted Live, Grml, Haiku,
-Harvester HCI, Hiren's BootCD PE, Kali Linux, Kaisen Linux, KaOS, KDE neon, Security Onion, Talos Linux,
+deepin, DRIFT Linux, FreeDOS, Garuda Linux, Harvester HCI, Hiren's BootCD PE, Kali Linux, Kaisen Linux, KaOS, KDE neon, Linux Lite, Memtest86+, OPNsense, ReactOS, Security Onion, SparkyLinux, Talos Linux,
 netboot.xyz, NixOS, SystemRescue, Super Grub2 Disk, ALT Rescue, Finnix, UrBackup Restore Stick,
 OpenBSD, openSUSE Leap, openSUSE Tumbleweed, FreeBSD, OpenIndiana Hipster, OmniOS, Omarchy, Parrot OS,
 Pop!_OS, PorteuX, Mageia,
 Proxmox, XCP-ng, Rescuezilla, Solus, TrueNAS Community Edition, TUXEDO OS, Void Linux, Vanilla OS and the free Zorin OS
-editions and Tails. IPFire, OPNsense, pfSense Community Edition, Redo Rescue, Ultimate Boot CD,
-Windows 10/11, Windows Server Evaluation, Qubes OS and Memtest86+ are
+editions and Tails. IPFire, pfSense Community Edition, Redo Rescue, Ultimate Boot CD,
+Windows 10/11, Windows Server Evaluation and Qubes OS are
 recognized but remain
 download-disabled until their mirror, signature-chain or archive-extraction requirements
 can be represented safely. A variant without an exact official mapping remains visibly

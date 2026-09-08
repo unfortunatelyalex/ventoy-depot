@@ -191,6 +191,23 @@ def test_manifest_identity_must_be_declared_in_capabilities(tmp_path: Path) -> N
         load_and_validate_manifest(write_manifest(tmp_path, value))
 
 
+def test_detection_version_template_must_reference_regex_groups(tmp_path: Path) -> None:
+    value = manifest()
+    value["detection"][0]["version_template"] = "{missing}.0"  # type: ignore[index]
+
+    with pytest.raises(SecurityError, match="unknown groups"):
+        load_and_validate_manifest(write_manifest(tmp_path, value))
+
+
+def test_valid_detection_version_template_is_accepted(tmp_path: Path) -> None:
+    value = manifest()
+    value["detection"][0]["version_template"] = "release-{version}"  # type: ignore[index]
+
+    loaded = load_and_validate_manifest(write_manifest(tmp_path, value))
+
+    assert loaded["detection"][0]["version_template"] == "release-{version}"
+
+
 def test_bundled_schema_matches_registry_contract() -> None:
     schema_path = (
         Path(__file__).parents[1] / "src" / "ventoy_depot" / "registry" / "provider-v1.schema.json"
@@ -228,4 +245,29 @@ def test_downloadable_manifest_cannot_omit_release_sources(tmp_path: Path) -> No
     value["release_sources"] = []
 
     with pytest.raises(SecurityError, match="requires a release source"):
+        load_and_validate_manifest(write_manifest(tmp_path, value))
+
+
+def test_manifest_accepts_bounded_zip_archive_policy(tmp_path: Path) -> None:
+    value = manifest()
+    value["release_sources"][0]["archive"] = {  # type: ignore[index]
+        "format": "zip",
+        "member_template": "generic.iso",
+        "output_filename_template": "example-{version}.iso",
+        "extracted_size_bytes": 1234,
+    }
+
+    loaded = load_and_validate_manifest(write_manifest(tmp_path, value))
+
+    assert loaded["release_sources"][0]["archive"]["format"] == "zip"
+
+
+def test_manifest_rejects_zip_without_exact_member_template(tmp_path: Path) -> None:
+    value = manifest()
+    value["release_sources"][0]["archive"] = {  # type: ignore[index]
+        "format": "zip",
+        "output_filename_template": "example-{version}.iso",
+    }
+
+    with pytest.raises(SecurityError, match="exact member"):
         load_and_validate_manifest(write_manifest(tmp_path, value))

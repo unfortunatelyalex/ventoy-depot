@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import bz2
+import gzip
 import hashlib
+import io
 import os
+import zipfile
 from dataclasses import replace
 from pathlib import Path
 
@@ -21,6 +25,7 @@ from ventoy_depot.transfer import (
     TransferCancelled,
     TransferError,
     _download,
+    _extract_archive,
     _trash,
     _verify_openpgp,
     apply_item,
@@ -109,6 +114,91 @@ def test_verified_download_is_atomically_added_and_old_iso_remains(
     assert destination.read_bytes() == Client.data
     assert plan_item.local.path.read_bytes() == b"old ISO"
     assert not destination.with_name(destination.name + ".partial").exists()
+
+
+def test_verified_zip_is_safely_extracted_copied_and_reverified(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / ".ventoy").touch()
+    iso = b"verified ISO inside publisher archive"
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as output:
+        output.writestr("publisher-generic-name.iso", iso)
+    Client.data = archive.getvalue()
+    monkeypatch.setattr("ventoy_depot.transfer.SafeHttpClient", Client)
+    monkeypatch.setattr("ventoy_depot.transfer.revalidate_device", lambda device: device)
+    plan_item = item(tmp_path, hashlib.sha256(Client.data).hexdigest())
+    assert plan_item.target is not None
+    plan_item = replace(
+        plan_item,
+        target=replace(
+            plan_item.target,
+            filename="memtest.iso",
+            download_filename="memtest.iso.zip",
+            archive_format="zip",
+            archive_member="publisher-generic-name.iso",
+            extracted_size_bytes=len(iso),
+        ),
+        required_bytes=len(iso),
+    )
+
+    destination = apply_item(plan_item, cache_dir=tmp_path / "cache")
+
+    assert destination.read_bytes() == iso
+    assert (tmp_path / "cache" / "memtest.iso.zip.download").read_bytes() == Client.data
+    assert not tuple((tmp_path / "cache").glob("ventoy-depot-*.iso"))
+    assert plan_item.local.path.read_bytes() == b"old ISO"
+
+
+def test_zip_with_path_traversal_is_rejected_even_when_expected_iso_is_safe(
+    tmp_path: Path,
+) -> None:
+    archive_path = tmp_path / "unsafe.zip"
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr("memtest.iso", b"ISO")
+        archive.writestr("../escaped", b"malicious")
+    destination = tmp_path / "output.iso"
+
+    with pytest.raises(TransferError, match="unsafe path"):
+        _extract_archive(
+            archive_path,
+            destination,
+            "zip",
+            "memtest.iso",
+            "memtest.iso",
+            3,
+            None,
+            None,
+        )
+
+    assert not destination.exists()
+    assert not (tmp_path.parent / "escaped").exists()
+
+
+@pytest.mark.parametrize(
+    ("archive_format", "compressed"),
+    [("gzip", gzip.compress), ("bzip2", bz2.compress)],
+)
+def test_single_stream_archives_are_bounded_and_extracted(
+    tmp_path: Path, archive_format: str, compressed
+) -> None:
+    iso = b"published compressed ISO"
+    archive_path = tmp_path / "image.archive"
+    archive_path.write_bytes(compressed(iso))
+    destination = tmp_path / "image.iso"
+
+    _extract_archive(
+        archive_path,
+        destination,
+        archive_format,
+        None,
+        destination.name,
+        len(iso),
+        None,
+        None,
+    )
+
+    assert destination.read_bytes() == iso
 
 
 def test_verified_local_source_is_copied_without_network_or_source_mutation(

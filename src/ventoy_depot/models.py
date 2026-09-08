@@ -56,6 +56,17 @@ class ReleaseArtifact:
     allowed_hosts: frozenset[str]
     identity: IsoIdentity | None = None
     source_path: Path | None = None
+    download_filename: str | None = None
+    archive_format: str | None = None
+    archive_member: str | None = None
+    extracted_size_bytes: int | None = None
+
+    @property
+    def installed_size_bytes(self) -> int | None:
+        """Return the space required by the final ISO, not its download container."""
+        if self.archive_format is not None:
+            return self.extracted_size_bytes
+        return self.size_bytes
 
     @property
     def verification_level(self) -> VerificationLevel:

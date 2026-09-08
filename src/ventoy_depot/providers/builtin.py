@@ -17,6 +17,7 @@ class FilenameRule:
     default_edition: str | None = None
     default_flavor: str | None = None
     default_language: str | None = None
+    version_template: str | None = None
 
 
 class FilenameProvider(Provider):
@@ -59,7 +60,11 @@ class FilenameProvider(Provider):
                     channel=_lower(values.get("channel")) or rule.default_channel,
                     architecture=architecture,
                     language=_lower(values.get("language") or rule.default_language),
-                    version=values.get("version"),
+                    version=(
+                        rule.version_template.format_map(values)
+                        if rule.version_template is not None
+                        else values.get("version")
+                    ),
                     build=values.get("build"),
                 )
                 return DetectedIso(path, identity, 0.98, "filename")
@@ -1283,6 +1288,158 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
             ),
         ),
         ProviderCapabilities(("grub", "bare"), ("i586", "x86_64", "loongarch64"), (), ("stable",)),
+    ),
+    FilenameProvider(
+        "freedos",
+        "FreeDOS",
+        (
+            FilenameRule(
+                re.compile(r"FD(?P<major>\d)(?P<minor>\d)LIVE\.iso$", re.I),
+                "freedos",
+                default_architecture="i386",
+                default_edition="livecd",
+                version_template="{major}.{minor}",
+            ),
+            FilenameRule(
+                re.compile(r"FD(?P<major>\d)(?P<minor>\d)LGCY\.iso$", re.I),
+                "freedos",
+                default_architecture="i386",
+                default_edition="legacycd",
+                version_template="{major}.{minor}",
+            ),
+        ),
+        ProviderCapabilities(("livecd", "legacycd"), ("i386",), (), ("stable",)),
+    ),
+    FilenameProvider(
+        "reactos",
+        "ReactOS",
+        (
+            FilenameRule(
+                re.compile(r"ReactOS-(?P<version>\d+(?:\.\d+)+)-i386\.iso$", re.I),
+                "reactos",
+                default_architecture="i386",
+                default_edition="unified",
+            ),
+        ),
+        ProviderCapabilities(("unified",), ("i386",), (), ("stable",)),
+    ),
+    FilenameProvider(
+        "deepin",
+        "deepin",
+        (
+            FilenameRule(
+                re.compile(
+                    r"deepin-desktop-community-(?P<version>\d+(?:\.\d+)+)-"
+                    r"(?P<architecture>amd64|arm64|loong64)\.iso$",
+                    re.I,
+                ),
+                "deepin",
+                default_edition="desktop-community",
+            ),
+            FilenameRule(
+                re.compile(
+                    r"deepin-desktop-community-(?P<version>\d+(?:\.\d+)+)-riscv64\.iso$",
+                    re.I,
+                ),
+                "deepin",
+                default_channel="preview",
+                default_architecture="riscv64",
+                default_edition="desktop-community",
+            ),
+        ),
+        ProviderCapabilities(
+            ("desktop-community",),
+            ("amd64", "arm64", "loong64", "riscv64"),
+            (),
+            ("stable", "preview"),
+        ),
+    ),
+    FilenameProvider(
+        "garuda-linux",
+        "Garuda Linux",
+        (
+            FilenameRule(
+                re.compile(
+                    r"garuda-(?P<edition>dr460nized-gaming|dr460nized|kde-lite|"
+                    r"cinnamon|gnome|hyprland|i3|mokka|sway|xfce)-linux-"
+                    r"(?:garuda|lts|zen)-(?P<version>\d{6})\.iso$",
+                    re.I,
+                ),
+                "garuda-linux",
+                default_channel="rolling",
+                default_architecture="x86_64",
+            ),
+        ),
+        ProviderCapabilities(
+            (
+                "cinnamon",
+                "dr460nized",
+                "dr460nized-gaming",
+                "gnome",
+                "hyprland",
+                "i3",
+                "kde-lite",
+                "mokka",
+                "sway",
+                "xfce",
+            ),
+            ("x86_64",),
+            (),
+            ("rolling",),
+        ),
+    ),
+    FilenameProvider(
+        "sparkylinux",
+        "SparkyLinux",
+        (
+            FilenameRule(
+                re.compile(
+                    r"sparkylinux-(?P<version>\d+(?:\.\d+)+)-"
+                    r"(?P<architecture>x86_64|i686-pae)-"
+                    r"(?P<edition>lxqt|mate|xfce|kde|minimalgui|minimalcli)\.iso$",
+                    re.I,
+                ),
+                "sparkylinux",
+            ),
+        ),
+        ProviderCapabilities(
+            ("lxqt", "mate", "xfce", "kde", "minimalgui", "minimalcli"),
+            ("x86_64", "i686-pae"),
+            (),
+            ("stable",),
+        ),
+    ),
+    FilenameProvider(
+        "drift-linux",
+        "DRIFT Linux",
+        (
+            FilenameRule(
+                re.compile(r"drift-linux-FAST-hybrid\.iso$", re.I),
+                "drift-linux",
+                default_edition="fast",
+                default_architecture="x86_64",
+            ),
+            FilenameRule(
+                re.compile(r"drift-linux-FAST-XS-hybrid\.iso$", re.I),
+                "drift-linux",
+                default_edition="fast-xs",
+                default_architecture="x86_64",
+            ),
+        ),
+        ProviderCapabilities(("fast", "fast-xs"), ("x86_64",), (), ("stable",)),
+    ),
+    FilenameProvider(
+        "linux-lite",
+        "Linux Lite",
+        (
+            FilenameRule(
+                re.compile(r"linux-lite-(?P<version>\d+(?:\.\d+)+)-64bit\.iso$", re.I),
+                "linux-lite",
+                default_edition="desktop",
+                default_architecture="x86_64",
+            ),
+        ),
+        ProviderCapabilities(("desktop",), ("x86_64",), (), ("stable",)),
     ),
     FilenameProvider(
         "vanilla-os",

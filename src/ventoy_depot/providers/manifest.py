@@ -95,6 +95,11 @@ class ManifestProvider(Provider):
             values = {
                 field: _resolve_value(value, groups) for field, value in rule["identity"].items()
             }
+            if "version_template" in rule:
+                values["version"] = _format_template(
+                    str(rule["version_template"]),
+                    {key: value for key, value in groups.items() if value is not None},
+                )
             identity = IsoIdentity(
                 provider_id=self.provider_id,
                 product_id=str(values["product_id"]).lower(),
@@ -170,7 +175,11 @@ def _resolve_source(
     metadata_url = str(source["metadata_url"])
     metadata = client.metadata(metadata_url).decode("utf-8", errors="replace")
     candidates = _artifact_candidates(
-        metadata, str(source["artifact_regex"]), source["identity"], identity
+        metadata,
+        str(source["artifact_regex"]),
+        source["identity"],
+        identity,
+        archived="archive" in source,
     )
     if not candidates:
         raise ProviderError("Official metadata contains no matching ISO variant.")
@@ -179,7 +188,11 @@ def _resolve_source(
         key=lambda item: _version_key(item[1].groupdict().get("version") or "0"),
     )
     groups = {key: value for key, value in match.groupdict().items() if value is not None}
-    version = groups.get("version") or identity.version
+    version = (
+        _format_template(str(source["version_template"]), groups)
+        if "version_template" in source
+        else groups.get("version") or identity.version
+    )
     if version is None:
         raise ProviderError("Official metadata does not identify the release version.")
     values = _template_values(identity, filename, version, groups)
@@ -190,10 +203,25 @@ def _resolve_source(
         client, metadata, metadata_url, url, checksum_policy, filename, values, algorithm
     )
     signature_url, fingerprints = _signature(source, metadata_url, url, values)
+    archive = source.get("archive")
+    output_filename = filename
+    archive_format = None
+    archive_member = None
+    extracted_size = None
+    if archive is not None:
+        output_filename = safe_filename(
+            _format_template(str(archive["output_filename_template"]), values)
+        )
+        archive_format = str(archive["format"])
+        if "member_template" in archive:
+            archive_member = safe_filename(
+                _format_template(str(archive["member_template"]), values)
+            )
+        extracted_size = archive.get("extracted_size_bytes")
     return ReleaseArtifact(
         version=version,
         build=groups.get("build"),
-        filename=safe_filename(filename),
+        filename=safe_filename(output_filename),
         download_url=url,
         size_bytes=_asset_size(metadata, filename),
         checksum_algorithm=algorithm,
@@ -202,6 +230,10 @@ def _resolve_source(
         signer_fingerprints=fingerprints,
         allowed_hosts=hosts,
         identity=replace(identity, version=version, build=groups.get("build")),
+        download_filename=filename if archive is not None else None,
+        archive_format=archive_format,
+        archive_member=archive_member,
+        extracted_size_bytes=extracted_size,
     )
 
 
@@ -210,9 +242,12 @@ def _artifact_candidates(
     expression: str,
     identity_template: dict[str, Any],
     identity: IsoIdentity,
+    *,
+    archived: bool = False,
 ) -> list[tuple[str, re.Match[str]]]:
     artifact_pattern = regex.compile(expression, regex.IGNORECASE)
-    names = set(re.findall(r"[A-Za-z0-9][A-Za-z0-9._+-]*\.iso", metadata, re.IGNORECASE))
+    suffix = r"(?:\.iso(?:\.zip|\.gz|\.bz2)?|\.zip|\.gz|\.bz2)" if archived else r"\.iso"
+    names = set(re.findall(rf"[A-Za-z0-9][A-Za-z0-9._+-]*{suffix}", metadata, re.IGNORECASE))
     candidates: list[tuple[str, re.Match[str]]] = []
     for filename in names:
         try:
@@ -264,9 +299,14 @@ def _source_matches_identity(template: dict[str, Any], identity: IsoIdentity) ->
 def _template_values(
     identity: IsoIdentity, filename: str, version: str, groups: dict[str, str]
 ) -> dict[str, str]:
+    stem = filename
+    for suffix in (".zip", ".gz", ".bz2"):
+        stem = stem.removesuffix(suffix)
+    stem = stem.removesuffix(".iso")
     return {
+        **groups,
         "filename": filename,
-        "stem": filename.removesuffix(".iso"),
+        "stem": stem,
         "version": version,
         "build": groups.get("build") or "",
         "product": identity.product_id,
@@ -409,16 +449,27 @@ def _asset_size(metadata: str, filename: str) -> int | None:
         payload = json.loads(metadata)
     except json.JSONDecodeError:
         return None
-    if not isinstance(payload, dict):
+
+    def walk(value: Any) -> int | None:
+        if isinstance(value, dict):
+            stored_filename = value.get("filename")
+            name = value.get("name") or (
+                Path(stored_filename).name if isinstance(stored_filename, str) else None
+            )
+            if name == filename:
+                size = value.get("size", value.get("bytes"))
+                if isinstance(size, int) and size >= 0:
+                    return size
+            for item in value.values():
+                if (result := walk(item)) is not None:
+                    return result
+        elif isinstance(value, list):
+            for item in value:
+                if (result := walk(item)) is not None:
+                    return result
         return None
-    assets = payload.get("assets", [])
-    if not isinstance(assets, list):
-        return None
-    for asset in assets:
-        if isinstance(asset, dict) and asset.get("name") == filename:
-            size = asset.get("size")
-            return size if isinstance(size, int) and size >= 0 else None
-    return None
+
+    return walk(payload)
 
 
 def _embedded_digest(metadata: str, filename: str, algorithm: str) -> str | None:
@@ -429,13 +480,16 @@ def _embedded_digest(metadata: str, filename: str, algorithm: str) -> str | None
 
     def walk(value: Any) -> str | None:
         if isinstance(value, dict):
-            name = value.get("name")
+            stored_filename = value.get("filename")
+            name = value.get("name") or (
+                Path(stored_filename).name if isinstance(stored_filename, str) else None
+            )
             url = value.get("url") or value.get("browser_download_url")
             matches = name == filename or (
                 isinstance(url, str) and Path(urlsplit(url).path).name == filename
             )
             if matches:
-                digest = value.get("digest") or value.get(algorithm)
+                digest = value.get("digest") or value.get(algorithm) or value.get(f"{algorithm}sum")
                 if isinstance(digest, str):
                     digest = digest.removeprefix(f"{algorithm}:")
                     length = 64 if algorithm == "sha256" else 128
@@ -477,6 +531,10 @@ def _architecture(value: str) -> str:
 
 
 def _format_url(template: str, values: dict[str, str]) -> str:
+    return _format_template(template, values)
+
+
+def _format_template(template: str, values: dict[str, str]) -> str:
     try:
         return template.format_map(values)
     except KeyError as error:

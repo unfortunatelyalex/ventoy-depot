@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import bz2
+import gzip
 import hashlib
 import json
 import os
@@ -9,6 +11,7 @@ import shutil
 import stat
 import subprocess
 import tempfile
+import zipfile
 from collections.abc import Callable
 from pathlib import Path
 
@@ -33,6 +36,7 @@ class TransferCancelled(TransferError):
 
 Progress = Callable[[str, int, int], None]
 CancelCheck = Callable[[], bool]
+MAX_EXTRACTED_BYTES = 16 * 1024**3
 
 
 def apply_item(
@@ -76,7 +80,7 @@ def apply_item(
         _file_signature(item.local.path) if item.action == UpdateAction.REPLACE else None
     )
     revalidate_device(device)
-    required = artifact.size_bytes or 0
+    required = artifact.installed_size_bytes or 0
     if shutil.disk_usage(device_root).free < required:
         raise TransferError("Insufficient free space on the Ventoy drive.")
 
@@ -90,13 +94,15 @@ def apply_item(
     staging = Path(temporary_context.name) if temporary_context else cache_dir
     assert staging is not None
     staging.mkdir(parents=True, exist_ok=True)
+    download_filename = safe_filename(artifact.download_filename or artifact.filename)
     downloaded = (
         source_path.resolve(strict=True)
         if source_path is not None
-        else staging / f"{artifact.filename}.download"
+        else staging / f"{download_filename}.download"
     )
     partial = destination.with_name(f"{destination.name}.partial")
     checked_progress = _checked_progress(progress, cancelled)
+    extracted: Path | None = None
     try:
         _raise_if_cancelled(cancelled)
         if source_path is None:
@@ -125,7 +131,7 @@ def apply_item(
             if trusted_keyring is None:
                 raise TransferError("Signed artifact requires a trusted provider keyring.")
             assert artifact.signature_url is not None
-            signature_path = staging / f"{artifact.filename}.sig"
+            signature_path = staging / f"{download_filename}.sig"
             signature_path.write_bytes(client.metadata(artifact.signature_url))
             _verify_openpgp(
                 downloaded,
@@ -133,15 +139,33 @@ def apply_item(
                 trusted_keyring,
                 artifact.signer_fingerprints,
             )
+        copy_source = downloaded
+        copy_algorithm = artifact.checksum_algorithm
+        copy_checksum = artifact.checksum
+        if artifact.archive_format is not None:
+            extracted = _temporary_extracted_path(staging)
+            _extract_archive(
+                downloaded,
+                extracted,
+                artifact.archive_format,
+                artifact.archive_member,
+                artifact.filename,
+                artifact.extracted_size_bytes,
+                cancelled,
+                checked_progress,
+            )
+            copy_source = extracted
+            copy_algorithm = "sha256"
+            copy_checksum = _file_digest(extracted, "sha256", cancelled)
         _raise_if_cancelled(cancelled)
         revalidate_device(device)
-        if shutil.disk_usage(device_root).free < downloaded.stat().st_size:
+        if shutil.disk_usage(device_root).free < copy_source.stat().st_size:
             raise TransferError("Insufficient free space on the Ventoy drive before copying.")
-        _copy(downloaded, partial, checked_progress)
+        _copy(copy_source, partial, checked_progress)
         _verify(
             partial,
-            artifact.checksum_algorithm,
-            artifact.checksum,
+            copy_algorithm,
+            copy_checksum,
             cancelled=cancelled,
             progress=checked_progress,
             stage="copy-verify",
@@ -192,6 +216,8 @@ def apply_item(
                 partial.unlink(missing_ok=True)
         raise
     finally:
+        if extracted is not None:
+            extracted.unlink(missing_ok=True)
         if temporary_context is not None:
             temporary_context.cleanup()
 
@@ -312,6 +338,142 @@ def _copy(source: Path, target: Path, progress: Progress | None) -> None:
                 progress("copy", completed, total)
         outgoing.flush()
         os.fsync(outgoing.fileno())
+
+
+def _temporary_extracted_path(staging: Path) -> Path:
+    descriptor, name = tempfile.mkstemp(prefix="ventoy-depot-", suffix=".iso", dir=staging)
+    os.close(descriptor)
+    path = Path(name)
+    path.unlink()
+    return path
+
+
+def _extract_archive(
+    source: Path,
+    target: Path,
+    archive_format: str,
+    archive_member: str | None,
+    expected_filename: str,
+    expected_size: int | None,
+    cancelled: CancelCheck | None,
+    progress: Progress | None,
+) -> None:
+    if safe_filename(
+        expected_filename
+    ) != expected_filename or not expected_filename.lower().endswith(".iso"):
+        raise TransferError("Archive output must be one safe ISO filename.")
+    if expected_size is not None and expected_size <= 0:
+        raise TransferError("Archive contains an invalid extracted size.")
+    available = shutil.disk_usage(target.parent).free
+    limit = min(available, MAX_EXTRACTED_BYTES)
+    if expected_size is not None:
+        if expected_size > limit:
+            raise TransferError("Insufficient space for the extracted ISO.")
+        limit = expected_size
+    try:
+        if archive_format == "zip":
+            _extract_zip(
+                source,
+                target,
+                archive_member,
+                expected_size,
+                limit,
+                cancelled,
+                progress,
+            )
+        elif archive_format in {"gzip", "bzip2"}:
+            if archive_member is not None:
+                raise TransferError("Single-stream archives cannot select a member.")
+            opener = gzip.open if archive_format == "gzip" else bz2.open
+            with opener(source, "rb") as incoming:
+                _extract_stream(incoming, target, expected_size, limit, cancelled, progress)
+        else:
+            raise TransferError(f"Unsupported archive format: {archive_format}")
+    except TransferError:
+        target.unlink(missing_ok=True)
+        raise
+    except (OSError, EOFError, zipfile.BadZipFile) as error:
+        target.unlink(missing_ok=True)
+        raise TransferError("Verified download is not a valid archive.") from error
+    except RuntimeError as error:
+        target.unlink(missing_ok=True)
+        raise TransferError("Archive could not be extracted safely.") from error
+    if expected_size is not None and target.stat().st_size != expected_size:
+        raise TransferError("Extracted ISO size does not match provider metadata.")
+
+
+def _extract_zip(
+    source: Path,
+    target: Path,
+    archive_member: str | None,
+    expected_size: int | None,
+    limit: int,
+    cancelled: CancelCheck | None,
+    progress: Progress | None,
+) -> None:
+    if archive_member is None:
+        raise TransferError("ZIP archive requires one exact ISO member.")
+    member_name = safe_filename(archive_member)
+    if not member_name.lower().endswith(".iso"):
+        raise TransferError("ZIP archive member must be an ISO file.")
+    with zipfile.ZipFile(source) as archive:
+        for info in archive.infolist():
+            normalized = info.filename.replace("\\", "/")
+            first_part = normalized.split("/", 1)[0]
+            if (
+                normalized.startswith("/")
+                or ":" in first_part
+                or any(part == ".." for part in normalized.split("/"))
+            ):
+                raise TransferError("Archive contains an unsafe path.")
+            mode = info.external_attr >> 16
+            if stat.S_ISLNK(mode):
+                raise TransferError("Archive contains a symbolic link.")
+        try:
+            member = archive.getinfo(member_name)
+        except KeyError as error:
+            raise TransferError("Expected ISO is missing from the archive.") from error
+        if member.is_dir() or member.flag_bits & 0x1:
+            raise TransferError("Expected ISO archive member is not a plain unencrypted file.")
+        if member.file_size > limit:
+            raise TransferError("Extracted ISO exceeds the safe size limit.")
+        if expected_size is not None and member.file_size != expected_size:
+            raise TransferError("Extracted ISO size does not match provider metadata.")
+        with archive.open(member) as incoming:
+            _extract_stream(
+                incoming, target, expected_size or member.file_size, limit, cancelled, progress
+            )
+
+
+def _extract_stream(
+    incoming: object,
+    target: Path,
+    expected_size: int | None,
+    limit: int,
+    cancelled: CancelCheck | None,
+    progress: Progress | None,
+) -> None:
+    completed = 0
+    with target.open("xb") as outgoing:
+        while block := incoming.read(1024 * 1024):  # type: ignore[attr-defined]
+            _raise_if_cancelled(cancelled)
+            completed += len(block)
+            if completed > limit:
+                raise TransferError("Extracted ISO exceeds the safe size limit.")
+            outgoing.write(block)
+            if progress:
+                progress("extract", completed, expected_size or 0)
+        outgoing.flush()
+        os.fsync(outgoing.fileno())
+
+
+def _file_digest(path: Path, algorithm: str, cancelled: CancelCheck | None = None) -> str:
+    digest = hashlib.new(algorithm)
+    with path.open("rb") as source:
+        for block in iter(lambda: source.read(1024 * 1024), b""):
+            _raise_if_cancelled(cancelled)
+            digest.update(block)
+    return digest.hexdigest()
 
 
 def _verify(

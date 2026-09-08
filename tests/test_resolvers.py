@@ -2389,6 +2389,108 @@ def test_talos_linux_resolver_uses_github_asset_digest(monkeypatch, architecture
 
 
 @pytest.mark.parametrize(
+    ("edition", "architecture", "archive_architecture", "member"),
+    [
+        ("bare", "i586", "i586", "memtest.iso"),
+        ("grub", "i586", "i586", "grub-memtest.iso"),
+        ("bare", "x86_64", "x86_64", "memtest.iso"),
+        ("grub", "x86_64", "x86_64", "grub-memtest.iso"),
+        ("bare", "loongarch64", "LA64", "memtest.iso"),
+        ("grub", "loongarch64", "LA64", "grub-memtest.iso"),
+    ],
+)
+def test_memtest86_plus_resolver_preserves_archive_variant(
+    monkeypatch,
+    edition: str,
+    architecture: str,
+    archive_architecture: str,
+    member: str,
+) -> None:
+    grub = ".grub" if edition == "grub" else ""
+    download_filename = f"mt86plus_8.10_{archive_architecture}{grub}.iso.zip"
+    digest = "e" * 64
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, requested: str) -> bytes:
+            if requested == "https://www.memtest.org/":
+                return (
+                    b'<a href="/download/v7.20/sha256sum.txt">old</a>'
+                    b'<a href="/download/v8.10/sha256sum.txt">current</a>'
+                )
+            assert requested == "https://www.memtest.org/download/v8.10/sha256sum.txt"
+            return f"{digest}  v8.10/{download_filename}\n".encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "memtest86-plus",
+        "memtest86-plus",
+        edition,
+        None,
+        "stable",
+        architecture,
+        None,
+        "7.20",
+        None,
+    )
+
+    artifact = resolvers.resolve_release("memtest86-plus", installed)
+
+    assert artifact.version == "8.10"
+    assert artifact.filename == download_filename.removesuffix(".zip")
+    assert artifact.download_filename == download_filename
+    assert artifact.download_url.endswith(download_filename)
+    assert artifact.archive_format == "zip"
+    assert artifact.archive_member == member
+    assert artifact.checksum == digest
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()
+
+
+def test_opnsense_resolver_verifies_bzip2_archive_and_preserves_dvd(monkeypatch) -> None:
+    digest = "f" * 64
+    base = "https://pkg.opnsense.org/releases/mirror/"
+    filename = "OPNsense-26.7-dvd-amd64.iso.bz2"
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, requested: str) -> bytes:
+            if requested == base:
+                return b"OPNsense-26.1-dvd-amd64.iso.bz2\nOPNsense-26.7-dvd-amd64.iso.bz2\n"
+            assert requested == base + "OPNsense-26.7-checksums-amd64.sha256"
+            return f"SHA256 ({filename}) = {digest}\n".encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "opnsense", "opnsense", "dvd", None, "stable", "amd64", None, "25.7", None
+    )
+
+    artifact = resolvers.resolve_release("opnsense", installed)
+
+    assert artifact.version == "26.7"
+    assert artifact.filename == "OPNsense-26.7-dvd-amd64.iso"
+    assert artifact.download_filename == filename
+    assert artifact.download_url == base + filename
+    assert artifact.archive_format == "bzip2"
+    assert artifact.checksum == digest
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()
+
+
+def test_opnsense_resolver_does_not_silently_convert_historical_cdrom() -> None:
+    installed = IsoIdentity(
+        "opnsense", "opnsense", "cdrom", None, "stable", "amd64", None, "19.1", None
+    )
+
+    with pytest.raises(resolvers.ProviderError, match="current OPNsense DVD"):
+        resolvers.resolve_release("opnsense", installed)
+
+
+@pytest.mark.parametrize(
     ("edition", "architecture", "filename"),
     [
         ("full", "x86_64", "antiX-26_x64-full.iso"),
@@ -2592,6 +2694,328 @@ def test_casuarina_linux_resolver_uses_release_bound_sha256(monkeypatch) -> None
     assert artifact.version == "20260518"
     assert artifact.filename == filename
     assert artifact.download_url == base + filename
+    assert artifact.checksum == digest
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()
+
+
+@pytest.mark.parametrize(
+    ("edition", "archive_edition", "member_edition"),
+    [("livecd", "LiveCD", "LIVE"), ("legacycd", "LegacyCD", "LGCY")],
+)
+def test_freedos_resolver_verifies_archive_and_preserves_cd_variant(
+    monkeypatch, edition: str, archive_edition: str, member_edition: str
+) -> None:
+    digest = "1" * 128
+    download_filename = f"FD14-{archive_edition}.zip"
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, requested: str) -> bytes:
+            if requested == "https://www.freedos.org/download/":
+                return b"<h1>Download FreeDOS 1.4</h1>"
+            assert requested == "https://www.freedos.org/download/verify.txt"
+            return f"sha512sum:\n{digest}  {download_filename}\n".encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "freedos", "freedos", edition, None, "stable", "i386", None, "1.3", None
+    )
+
+    artifact = resolvers.resolve_release("freedos", installed)
+
+    assert artifact.version == "1.4"
+    assert artifact.filename == f"FD14{member_edition}.iso"
+    assert artifact.download_filename == download_filename
+    assert artifact.download_url == f"https://download.freedos.org/1.4/{download_filename}"
+    assert artifact.archive_format == "zip"
+    assert artifact.archive_member == artifact.filename
+    assert artifact.checksum_algorithm == "sha512"
+    assert artifact.checksum == digest
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()
+
+
+def test_reactos_resolver_uses_official_sourceforge_sha256(monkeypatch) -> None:
+    version = "0.4.16"
+    download_filename = f"ReactOS-{version}-i386.zip"
+    sourceforge = (
+        f"https://sourceforge.net/projects/reactos/files/ReactOS/{version}/"
+        f"{download_filename}/download"
+    )
+    digest = "2" * 64
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, requested: str) -> bytes:
+            assert requested == "https://sourceforge.net/projects/reactos/best_release.json"
+            return json.dumps(
+                {
+                    "release": {
+                        "filename": f"/ReactOS/{version}/{download_filename}",
+                        "sha256sum": digest,
+                        "bytes": 198_087_895,
+                    }
+                }
+            ).encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "reactos", "reactos", "unified", None, "stable", "i386", None, "0.4.15", None
+    )
+
+    artifact = resolvers.resolve_release("reactos", installed)
+
+    assert artifact.version == version
+    assert artifact.filename == f"ReactOS-{version}-i386.iso"
+    assert artifact.download_filename == download_filename
+    assert artifact.download_url == sourceforge + "?use_mirror=netix"
+    assert artifact.archive_format == "zip"
+    assert artifact.archive_member == artifact.filename
+    assert artifact.checksum == digest
+    assert artifact.size_bytes == 198_087_895
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()
+
+
+@pytest.mark.parametrize(
+    ("architecture", "channel"),
+    [("amd64", "stable"), ("arm64", "stable"), ("loong64", "stable"), ("riscv64", "preview")],
+)
+def test_deepin_resolver_preserves_architecture_and_preview_channel(
+    monkeypatch, architecture: str, channel: str
+) -> None:
+    digest = "3" * 64
+    filename = f"deepin-desktop-community-25.2.0-{architecture}.iso"
+    base = f"https://cdimage.deepin.com/releases/25.2.0/{architecture}/"
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, requested: str) -> bytes:
+            if requested == "https://cdimage.deepin.com/releases/":
+                return b'<a href="25.1.0/">old</a><a href="25.2.0/">current</a>'
+            assert requested == base + "SHA256SUMS"
+            return f"{digest}  {filename}\n".encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "deepin",
+        "deepin",
+        "desktop-community",
+        None,
+        channel,
+        architecture,
+        None,
+        "25.1.0",
+        None,
+    )
+
+    artifact = resolvers.resolve_release("deepin", installed)
+
+    assert artifact.version == "25.2.0"
+    assert artifact.filename == filename
+    assert artifact.download_url == base + filename
+    assert artifact.checksum == digest
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()
+
+
+def test_deepin_resolver_rejects_riscv_stable_channel() -> None:
+    installed = IsoIdentity(
+        "deepin",
+        "deepin",
+        "desktop-community",
+        None,
+        "stable",
+        "riscv64",
+        None,
+        "25.1.0",
+        None,
+    )
+
+    with pytest.raises(resolvers.ProviderError, match="channel"):
+        resolvers.resolve_release("deepin", installed)
+
+
+@pytest.mark.parametrize(
+    ("edition", "kernel"),
+    [("dr460nized-gaming", "garuda"), ("xfce", "lts"), ("sway", "zen")],
+)
+def test_garuda_resolver_preserves_edition_and_uses_sha256_sidecar(
+    monkeypatch, edition: str, kernel: str
+) -> None:
+    digest = "4" * 64
+    filename = f"garuda-{edition}-linux-{kernel}-260819.iso"
+    root = f"https://sourceforge.net/projects/garuda-linux/files/garuda/{edition}/"
+    release_root = root + "260819/"
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, requested: str) -> bytes:
+            if requested == root:
+                return (
+                    f"/projects/garuda-linux/files/garuda/{edition}/260309/\n"
+                    f"/projects/garuda-linux/files/garuda/{edition}/260819/\n"
+                ).encode()
+            if requested == release_root:
+                return f"{filename}\n{filename}.sha256\n".encode()
+            assert requested == f"{release_root}{filename}.sha256/download?use_mirror=netix"
+            return f"{digest}  {filename}\n".encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "garuda-linux",
+        "garuda-linux",
+        edition,
+        None,
+        "rolling",
+        "x86_64",
+        None,
+        "260309",
+        None,
+    )
+
+    artifact = resolvers.resolve_release("garuda-linux", installed)
+
+    assert artifact.version == "260819"
+    assert artifact.filename == filename
+    assert artifact.download_url == f"{release_root}{filename}/download?use_mirror=netix"
+    assert artifact.checksum == digest
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()
+
+
+@pytest.mark.parametrize(
+    ("edition", "architecture", "directory"),
+    [
+        ("lxqt", "x86_64", "lxqt"),
+        ("kde", "x86_64", "kde"),
+        ("minimalgui", "i686-pae", "base"),
+        ("minimalcli", "i686-pae", "cli"),
+    ],
+)
+def test_sparkylinux_resolver_preserves_variant_and_uses_allsums(
+    monkeypatch, edition: str, architecture: str, directory: str
+) -> None:
+    digest = "5" * 128
+    filename = f"sparkylinux-8.4-{architecture}-{edition}.iso"
+    root = f"https://sourceforge.net/projects/sparkylinux/files/{directory}/{filename}"
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, requested: str) -> bytes:
+            if requested == "https://sparkylinux.org/download/stable/":
+                return f"sparkylinux-8.3-{architecture}-{edition}.iso\n{filename}\n".encode()
+            assert requested == root + ".allsums.txt/download?use_mirror=master"
+            return f"# sha512sum:\n{digest}  {filename}\n".encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "sparkylinux",
+        "sparkylinux",
+        edition,
+        None,
+        "stable",
+        architecture,
+        None,
+        "8.3",
+        None,
+    )
+
+    artifact = resolvers.resolve_release("sparkylinux", installed)
+
+    assert artifact.version == "8.4"
+    assert artifact.filename == filename
+    assert artifact.download_url == root + "/download?use_mirror=master"
+    assert artifact.checksum_algorithm == "sha512"
+    assert artifact.checksum == digest
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()
+
+
+@pytest.mark.parametrize(
+    ("edition", "label", "filename"),
+    [
+        ("fast", "DRIFT Fast", "drift-linux-FAST-hybrid.iso"),
+        ("fast-xs", "DRIFT Fast XS", "drift-linux-FAST-XS-hybrid.iso"),
+    ],
+)
+def test_drift_linux_resolver_preserves_edition_and_uses_sha256(
+    monkeypatch, edition: str, label: str, filename: str
+) -> None:
+    digest = "6" * 64
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, requested: str) -> bytes:
+            if requested == "https://www.driftlinux.org/downloads/":
+                return f"<span>{label} 2026.01</span>".encode()
+            assert requested == f"https://downloads.driftlinux.org/{filename}.sha256"
+            return f"{digest}  {filename}\n".encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "drift-linux",
+        "drift-linux",
+        edition,
+        None,
+        "stable",
+        "x86_64",
+        None,
+        "2025.04",
+        None,
+    )
+
+    artifact = resolvers.resolve_release("drift-linux", installed)
+
+    assert artifact.version == "2026.01"
+    assert artifact.filename == filename
+    assert artifact.download_url == f"https://downloads.driftlinux.org/{filename}"
+    assert artifact.checksum == digest
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()
+
+
+def test_linux_lite_resolver_uses_official_repository_sha256(monkeypatch) -> None:
+    filename = "linux-lite-8.0-64bit.iso"
+    digest = "7" * 64
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, requested: str) -> bytes:
+            if requested == "https://www.linuxliteos.com/download.php":
+                return b"linux-lite-7.8-64bit.iso linux-lite-8.0-64bit.iso.torrent"
+            assert requested == (
+                "https://repo.linuxliteos.com/linuxlite/isos/8.0/linux-lite-8.0-64bit.iso.sha256"
+            )
+            return f"{digest}  {filename}\n".encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "linux-lite", "linux-lite", "desktop", None, "stable", "x86_64", None, "7.8", None
+    )
+
+    artifact = resolvers.resolve_release("linux-lite", installed)
+
+    assert artifact.version == "8.0"
+    assert artifact.filename == filename
+    assert artifact.download_url == (
+        "https://repo.linuxliteos.com/linuxlite/isos/8.0/linux-lite-8.0-64bit.iso"
+    )
     assert artifact.checksum == digest
     assert artifact.identity is not None
     assert artifact.identity.variant_key() == installed.variant_key()

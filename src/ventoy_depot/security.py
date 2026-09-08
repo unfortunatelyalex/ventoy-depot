@@ -5,6 +5,7 @@ import json
 import re
 import socket
 from pathlib import Path, PurePosixPath
+from string import Formatter
 from typing import Any
 from urllib.parse import unquote, urlsplit
 
@@ -241,7 +242,7 @@ def _validate_registry_shape(payload: dict[str, Any]) -> None:
         }
         if required - source.keys():
             raise SecurityError("Manifest release source is incomplete.")
-        if set(source) - (required | {"automatic_download"}):
+        if set(source) - (required | {"automatic_download", "archive", "version_template"}):
             raise SecurityError("Manifest release source contains unsupported fields.")
         if not isinstance(source["source_id"], str) or not _SOURCE_ID.fullmatch(
             source["source_id"]
@@ -251,6 +252,40 @@ def _validate_registry_shape(payload: dict[str, Any]) -> None:
             raise SecurityError("Manifest artifact regex must be a string.")
         if "automatic_download" in source and not isinstance(source["automatic_download"], bool):
             raise SecurityError("Manifest automatic_download flag must be boolean.")
+        if "version_template" in source and (
+            not isinstance(source["version_template"], str)
+            or not 1 <= len(source["version_template"]) <= 80
+        ):
+            raise SecurityError("Manifest release version template is invalid.")
+        if "archive" in source:
+            archive = _object(source["archive"], "archive policy")
+            allowed_archive_fields = {
+                "format",
+                "member_template",
+                "output_filename_template",
+                "extracted_size_bytes",
+            }
+            if set(archive) - allowed_archive_fields or not {
+                "format",
+                "output_filename_template",
+            } <= set(archive):
+                raise SecurityError("Manifest archive policy is incomplete or unsupported.")
+            if archive["format"] not in {"zip", "gzip", "bzip2"}:
+                raise SecurityError("Manifest archive format is unsupported.")
+            if archive["format"] == "zip" and "member_template" not in archive:
+                raise SecurityError("ZIP archive policy requires an exact member template.")
+            if archive["format"] != "zip" and "member_template" in archive:
+                raise SecurityError("Single-stream archive policy cannot select a member.")
+            for field in ("member_template", "output_filename_template"):
+                if field in archive and (
+                    not isinstance(archive[field], str) or not 1 <= len(archive[field]) <= 255
+                ):
+                    raise SecurityError("Manifest archive filename template is invalid.")
+            extracted_size = archive.get("extracted_size_bytes")
+            if extracted_size is not None and (
+                not isinstance(extracted_size, int) or not 1 <= extracted_size <= 16 * 1024**3
+            ):
+                raise SecurityError("Manifest extracted ISO size is invalid.")
         _validate_identity(source["identity"], capabilities, source["artifact_regex"])
         download = _object(source["download"], "download policy")
         if set(download) - {"strategy", "url_template", "link_regex"}:
@@ -309,7 +344,13 @@ def _validate_registry_shape(payload: dict[str, Any]) -> None:
         raise SecurityError("Detection must contain 1-50 rules.")
     for value in detection:
         rule = _object(value, "detection rule")
-        if set(rule) - {"regex", "volume_regex", "identity", "downloadable"} or not {
+        if set(rule) - {
+            "regex",
+            "volume_regex",
+            "identity",
+            "downloadable",
+            "version_template",
+        } or not {
             "regex",
             "identity",
             "downloadable",
@@ -322,6 +363,8 @@ def _validate_registry_shape(payload: dict[str, Any]) -> None:
             if not isinstance(rule["volume_regex"], str) or not rule["volume_regex"]:
                 raise SecurityError("Manifest volume detection regex must be a non-empty string.")
             expressions.append(rule["volume_regex"])
+        if "version_template" in rule:
+            _validate_version_template(rule["version_template"], expressions)
         _validate_identity(rule["identity"], capabilities, *expressions)
 
     if not sources and any(rule["downloadable"] for rule in detection):
@@ -379,6 +422,32 @@ def _validate_identity(value: Any, capabilities: dict[str, Any], *expressions: s
                 raise SecurityError(f"Manifest identity {field} references an unknown regex group.")
         elif item is not None and item not in capabilities[capability]:
             raise SecurityError(f"Manifest identity {field} is not declared in capabilities.")
+
+
+def _validate_version_template(value: Any, expressions: list[str]) -> None:
+    if not isinstance(value, str) or not 1 <= len(value) <= 80:
+        raise SecurityError("Manifest detection version template is invalid.")
+    groups: set[str] = set()
+    for expression in expressions:
+        try:
+            groups.update(re.compile(expression).groupindex)
+        except re.error:
+            continue
+    try:
+        fields = {
+            field_name
+            for _literal, field_name, format_spec, conversion in Formatter().parse(value)
+            if field_name is not None
+            and not format_spec
+            and conversion is None
+            and "." not in field_name
+            and "[" not in field_name
+        }
+        rendered = value.format_map({field: "1" for field in fields})
+    except (KeyError, ValueError):
+        raise SecurityError("Manifest detection version template is invalid.") from None
+    if not fields or not fields <= groups or "{" in rendered or "}" in rendered:
+        raise SecurityError("Manifest detection version template references unknown groups.")
 
 
 def _object(value: Any, label: str) -> dict[str, Any]:

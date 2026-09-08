@@ -76,6 +76,30 @@ def test_plan_reserves_space_across_all_selected_updates(monkeypatch, tmp_path: 
     assert plan.required_bytes == 60
 
 
+def test_plan_uses_extracted_iso_size_instead_of_archive_download_size(
+    monkeypatch, tmp_path: Path
+) -> None:
+    detected = [DetectedIso(tmp_path / "old.iso", identity("a"), 1.0, "filename")]
+    archived = replace(
+        artifact("new.iso", 40),
+        download_filename="new.iso.zip",
+        archive_format="zip",
+        archive_member="new.iso",
+        extracted_size_bytes=75,
+    )
+    provider = StubProvider({"a": archived})
+    monkeypatch.setattr("ventoy_depot.planner.find_isos", lambda path, providers: detected)
+    monkeypatch.setattr("ventoy_depot.planner.provider_map", lambda **_kwargs: {"test": provider})
+    monkeypatch.setattr(
+        "ventoy_depot.planner.shutil.disk_usage", lambda path: SimpleNamespace(free=100)
+    )
+
+    plan = build_plan(device(tmp_path))
+
+    assert plan.items[0].required_bytes == 75
+    assert plan.required_bytes == 75
+
+
 def test_plan_rejects_duplicate_target_path(monkeypatch, tmp_path: Path) -> None:
     detected = [
         DetectedIso(tmp_path / "old-a.iso", identity("a"), 1.0, "filename"),
