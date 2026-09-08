@@ -2585,4 +2585,39 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
         ),
         ProviderCapabilities(("unicorn", "lomiri"), ("amd64", "arm64"), (), ("rolling",)),
     ),
+    FilenameProvider(
+        "porteus",
+        "Porteus",
+        (
+            FilenameRule(
+                re.compile(
+                    r"Porteus-(?P<edition>CINNAMON|GNOME|KDE|LXDE|LXQT|MATE|OPENBOX|XFCE)-"
+                    r"v(?P<version>\d+(?:\.\d+)+)-(?P<architecture>x86_64)\.iso$",
+                    re.I,
+                ),
+                "porteus",
+                default_channel="stable",
+            ),
+        ),
+        ProviderCapabilities(
+            ("cinnamon", "gnome", "kde", "lxde", "lxqt", "mate", "openbox", "xfce"),
+            ("x86_64",),
+            (),
+            ("stable",),
+        ),
+    ),
+    FilenameProvider(
+        "drweb-livedisk",
+        "Dr.Web LiveDisk",
+        (
+            FilenameRule(
+                re.compile(r"drweb-livedisk-(?P<version>\d+)-cd\.iso$", re.I),
+                "drweb-livedisk",
+                default_edition="rescue",
+                default_channel="stable",
+                default_architecture="x86_64",
+            ),
+        ),
+        ProviderCapabilities(("rescue",), ("x86_64",), (), ("stable",)),
+    ),
 )

@@ -149,6 +149,8 @@ from ventoy_depot.providers.builtin import BUILTIN_PROVIDERS
         ("rescatux-0.74.iso", "rescatux", "repair", "multiarch"),
         ("Rhino-Linux-2026.1-amd64.iso", "rhino-linux", "unicorn", "amd64"),
         ("Rhino-Linux-2026.1-arm64-lomiri.iso", "rhino-linux", "lomiri", "arm64"),
+        ("Porteus-XFCE-v5.01-x86_64.iso", "porteus", "xfce", "x86_64"),
+        ("drweb-livedisk-900-cd.iso", "drweb-livedisk", "rescue", "x86_64"),
         ("alpine-standard-3.24.1-x86_64.iso", "alpine", "standard", "x86_64"),
         (
             "chimera-linux-riscv64-LIVE-20251220-plasma.iso",
@@ -312,6 +314,15 @@ def test_blackarch_detection_preserves_rolling_channel_without_enabling_download
 
     assert detected is not None
     assert detected.identity.channel == "rolling"
+    assert provider.supports_automatic_download is False
+
+
+def test_drweb_livedisk_is_detection_only_without_strong_publisher_checksum() -> None:
+    provider = provider_map()["drweb-livedisk"]
+
+    detected = provider.detect(Path("drweb-livedisk-900-cd.iso"))
+
+    assert detected is not None
     assert provider.supports_automatic_download is False
 
 

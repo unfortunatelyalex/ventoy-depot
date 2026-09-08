@@ -3336,3 +3336,36 @@ def test_rhino_linux_resolver_reads_dynamic_official_variant_metadata(
     assert artifact.download_url.endswith(f"/{filename}/download?use_mirror=netix")
     assert artifact.identity is not None
     assert artifact.identity.variant_key() == installed.variant_key()
+
+
+@pytest.mark.parametrize(
+    "edition", ["cinnamon", "gnome", "kde", "lxde", "lxqt", "mate", "openbox", "xfce"]
+)
+def test_porteus_resolver_preserves_stable_desktop_edition(monkeypatch, edition: str) -> None:
+    filename = f"Porteus-{edition.upper()}-v5.01-x86_64.iso"
+    digest = "8" * 64
+    base = "https://mirrors.dotsrc.org/porteus/x86_64/current/"
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, requested: str) -> bytes:
+            if requested == base:
+                return f'<a href="{filename}">{filename}</a>'.encode()
+            assert requested == base + "sha256sums.txt"
+            return f"{digest}  {filename}\n".encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "porteus", "porteus", edition, None, "stable", "x86_64", None, "5.0", None
+    )
+
+    artifact = resolvers.resolve_release("porteus", installed)
+
+    assert artifact.version == "5.01"
+    assert artifact.filename == filename
+    assert artifact.checksum == digest
+    assert artifact.download_url == base + filename
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()

@@ -61,6 +61,7 @@ BUILTIN_RESOLVER_IDS = frozenset(
         "openindiana",
         "xcp-ng",
         "porteux",
+        "porteus",
         "ghostbsd",
         "haiku",
         "harvester",
@@ -154,6 +155,7 @@ def resolve_release(provider_id: str, identity: IsoIdentity) -> ReleaseArtifact:
         "openindiana": _openindiana,
         "xcp-ng": _xcp_ng,
         "porteux": _porteux,
+        "porteus": _porteus,
         "ghostbsd": _ghostbsd,
         "haiku": _haiku,
         "harvester": _harvester,
@@ -3573,3 +3575,33 @@ def _rhino_linux(identity: IsoIdentity) -> ReleaseArtifact:
             hosts,
         )
     raise ProviderError("The official Rhino Linux metadata lacks this ISO variant.")
+
+
+def _porteus(identity: IsoIdentity) -> ReleaseArtifact:
+    editions = {"cinnamon", "gnome", "kde", "lxde", "lxqt", "mate", "openbox", "xfce"}
+    if identity.product_id != "porteus" or identity.edition not in editions:
+        raise ProviderError("This Porteus desktop edition is not supported automatically.")
+    if identity.architecture != "x86_64" or identity.channel != "stable":
+        raise ProviderError("This Porteus architecture or release channel is not supported.")
+    base = "https://mirrors.dotsrc.org/porteus/x86_64/current/"
+    hosts = {"www.porteus.org", "mirrors.dotsrc.org"}
+    client = SafeHttpClient(frozenset(hosts))
+    index = _text(client, base)
+    pattern = re.compile(
+        rf"\b(Porteus-{re.escape(identity.edition)}-v(\d+(?:\.\d+)+)-x86_64\.iso)\b",
+        re.I,
+    )
+    candidates = pattern.findall(index)
+    if not candidates:
+        raise ProviderError("The official Porteus mirror lacks this stable desktop edition.")
+    filename, version = max(candidates, key=lambda item: _version_key(item[1]))
+    sums = _text(client, base + "sha256sums.txt")
+    return _artifact(
+        identity,
+        version,
+        filename,
+        base + filename,
+        "sha256",
+        _checksum(sums, filename, "sha256"),
+        hosts,
+    )

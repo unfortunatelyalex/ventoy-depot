@@ -63,11 +63,11 @@ EndeavourOS, CachyOS, Clonezilla, Gentoo, GhostBSD, GParted Live, Grml, Haiku,
 deepin, DRIFT Linux, FreeDOS, Garuda Linux, Harvester HCI, Hiren's BootCD PE, Kali Linux, Kaisen Linux, KaOS, KDE neon, Linux Lite, Memtest86+, OPNsense, Puppy Linux BookwormPup64, ReactOS, Security Onion, SparkyLinux, Talos Linux, Tsurugi Linux,
 netboot.xyz, NixOS, SystemRescue, Super Grub2 Disk, ALT Rescue, Finnix, UrBackup Restore Stick,
 OpenBSD, openSUSE Leap, openSUSE Tumbleweed, FreeBSD, OpenIndiana Hipster, OmniOS, Omarchy, openmediavault, Parrot OS,
-Pop!_OS, PorteuX, Mageia,
+Pop!_OS, Porteus, PorteuX, Mageia,
 Proxmox, XCP-ng, Rescuezilla, Rhino Linux, Solus, TrueNAS Community Edition, TUXEDO OS, Void Linux, Vanilla OS and the free Zorin OS
 editions and Tails. IPFire, pfSense Community Edition, Redo Rescue, Ultimate Boot CD,
 Windows 10/11, Windows Server Evaluation, Qubes OS, BlackArch, Boot-Repair-Disk,
-Fatdog64, Peppermint OS, Q4OS, Rescatux and Slax are
+Dr.Web LiveDisk, Fatdog64, Peppermint OS, Q4OS, Rescatux and Slax are
 recognized but remain
 download-disabled until their mirror, signature-chain or archive-extraction requirements
 can be represented safely. A variant without an exact official mapping remains visibly
