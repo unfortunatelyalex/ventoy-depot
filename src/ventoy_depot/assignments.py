@@ -31,9 +31,16 @@ class AssignmentCatalog:
         self.path = self.mount_path / ".ventoy-depot" / "catalog.json"
 
     def lookup(self, iso_path: Path) -> IsoIdentity | None:
-        assignment = self._records().get(self._relative(iso_path))
-        if assignment is None or assignment.source_sha256 != sha256_file(iso_path):
+        records = self._records()
+        if not records:
             return None
+        assignment = records.get(self._relative(iso_path))
+        if assignment is None:
+            return None
+        if assignment.source_sha256 != sha256_file(iso_path):
+            raise AssignmentError(
+                "The stored ISO assignment no longer matches this file; assign it again."
+            )
         return assignment.identity
 
     def assign(self, iso_path: Path, identity: IsoIdentity) -> None:

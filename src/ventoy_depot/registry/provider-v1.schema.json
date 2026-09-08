@@ -13,7 +13,7 @@
     "driver": {"enum": ["github-releases", "gitlab-releases", "static-json", "directory-index", "checksum-list", "sidecar", "static-html", "latest-redirect"]},
     "allowed_hosts": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "pattern": "^[A-Za-z0-9.-]+$"}},
     "capabilities": {"$ref": "#/$defs/capabilities"},
-    "release_sources": {"type": "array", "minItems": 1, "maxItems": 40, "items": {"$ref": "#/$defs/releaseSource"}},
+    "release_sources": {"type": "array", "minItems": 0, "maxItems": 40, "items": {"$ref": "#/$defs/releaseSource"}},
     "detection": {"type": "array", "minItems": 1, "maxItems": 50, "items": {"$ref": "#/$defs/detectionRule"}},
     "notes": {"type": "array", "items": {"type": "string", "maxLength": 500}}
   },
@@ -56,6 +56,15 @@
       "type": "object", "additionalProperties": false, "required": ["strategy"],
       "properties": {"strategy": {"enum": ["url-template", "page-link", "release-asset", "latest-redirect", "user-supplied"]}, "url_template": {"$ref": "#/$defs/httpsUrl"}, "link_regex": {"type": "string", "maxLength": 512}}
     },
+    "archive": {
+      "type": "object", "additionalProperties": false, "required": ["format", "output_filename_template"],
+      "properties": {
+        "format": {"enum": ["zip", "gzip", "bzip2"]},
+        "member_template": {"type": "string", "minLength": 1, "maxLength": 255},
+        "output_filename_template": {"type": "string", "minLength": 1, "maxLength": 255},
+        "extracted_size_bytes": {"type": "integer", "minimum": 1, "maximum": 17179869184}
+      }
+    },
     "releaseSource": {
       "type": "object", "additionalProperties": false,
       "required": ["source_id", "metadata_url", "artifact_regex", "identity", "download", "verification"],
@@ -63,12 +72,14 @@
         "source_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,62}$"}, "metadata_url": {"$ref": "#/$defs/httpsUrl"},
         "artifact_regex": {"type": "string", "maxLength": 512}, "identity": {"$ref": "#/$defs/identity"}, "download": {"$ref": "#/$defs/download"},
         "verification": {"type": "object", "additionalProperties": false, "required": ["level", "checksum"], "properties": {"level": {"enum": ["CHECKSUM", "SIGNED"]}, "checksum": {"$ref": "#/$defs/checksum"}, "signature": {"$ref": "#/$defs/signature"}}},
+        "archive": {"$ref": "#/$defs/archive"},
+        "version_template": {"type": "string", "minLength": 1, "maxLength": 80},
         "automatic_download": {"type": "boolean", "default": true}
       }
     },
     "detectionRule": {
       "type": "object", "additionalProperties": false, "required": ["regex", "identity", "downloadable"],
-      "properties": {"regex": {"type": "string", "maxLength": 512}, "identity": {"$ref": "#/$defs/identity"}, "downloadable": {"type": "boolean"}}
+      "properties": {"regex": {"type": "string", "maxLength": 512}, "volume_regex": {"type": "string", "maxLength": 512}, "version_template": {"type": "string", "minLength": 1, "maxLength": 80}, "identity": {"$ref": "#/$defs/identity"}, "downloadable": {"type": "boolean"}}
     }
   }
 }

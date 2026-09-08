@@ -21,6 +21,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "build>=1.2",
+    "editables>=0.5",
     "mypy>=1.11",
     "pytest>=8.0",
     "ruff>=0.8",
@@ -32,7 +33,7 @@ ventoy-depot = "ventoy_depot.cli:main"
 ventoy-iso-updater = "ventoy_depot.compat:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/ventoy_depot", "src/ventoy_iso_updater"]
+packages = ["src/ventoy_depot"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

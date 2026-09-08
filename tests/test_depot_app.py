@@ -4,13 +4,17 @@ from pathlib import Path
 
 import pytest
 from rich.text import Text
-from textual.widgets import Button, Static, TextArea
+from textual.widgets import Button, Input, Select, Static, TextArea
 
 from ventoy_depot.app import (
     _ASSIGNMENT_PROFILES,
+    AddIsoDialog,
     AssignIdentity,
+    ConfirmEmptyTrash,
+    OfficialLinkDialog,
     SettingsDialog,
     VentoyDepotApp,
+    _display_url,
     _write_report,
 )
 from ventoy_depot.config import Settings
@@ -24,6 +28,7 @@ from ventoy_depot.models import (
     UpdatePlan,
     VerificationLevel,
 )
+from ventoy_depot.providers.builtin import BUILTIN_PROVIDERS
 from ventoy_depot.report import ItemResult, ResultStatus, RunReport
 
 
@@ -36,6 +41,34 @@ def test_assignment_profiles_use_supported_product_and_architecture_defaults() -
     assert profiles["Debian Live"] == ["debian", "debian", "amd64"]
     assert profiles["Linux Mint"][-1] == "x86_64"
     assert profiles["Zorin OS"][-1] == "x86_64"
+    assert profiles["Parrot OS"] == ["parrot-os", "parrot-os", "amd64"]
+    assert profiles["Void Linux"] == ["void-linux", "void-linux", "x86_64"]
+    assert profiles["Mageia"] == ["mageia", "mageia", "x86_64"]
+    assert profiles["CentOS Stream"] == ["centos-stream", "centos-stream", "x86_64"]
+    assert profiles["Finnix"] == ["finnix", "finnix", "amd64"]
+    assert profiles["ALT Rescue"] == ["alt-rescue", "alt-rescue", "x86_64"]
+    assert profiles["UrBackup Restore Stick"] == [
+        "urbackup-restore",
+        "urbackup-restore",
+        "x86_64",
+    ]
+    assert profiles["Calculate Linux"] == [
+        "calculate-linux",
+        "calculate-linux",
+        "x86_64",
+    ]
+    assert profiles["openEuler"] == ["openeuler", "openeuler", "x86_64"]
+    assert profiles["openSUSE Leap"] == ["opensuse-leap", "opensuse-leap", "x86_64"]
+    assert profiles["Kubuntu"] == ["ubuntu-flavors", "kubuntu", "amd64"]
+    assert profiles["Ubuntu Unity"] == ["ubuntu-flavors", "ubuntu-unity", "amd64"]
+    assert profiles["Ubuntu MATE"] == ["ubuntu-flavors", "ubuntu-mate", "amd64"]
+    assert profiles["Ubuntu Studio"] == ["ubuntu-flavors", "ubuntustudio", "amd64"]
+    assert profiles["Windows 10"] == ["windows-10", "windows-10", "x86_64"]
+    assert profiles["Windows Server Evaluation"] == [
+        "windows-server",
+        "windows-server",
+        "x86_64",
+    ]
 
 
 def test_tui_mounts_without_stylesheet_errors(monkeypatch) -> None:
@@ -50,6 +83,8 @@ def test_tui_mounts_without_stylesheet_errors(monkeypatch) -> None:
             assert app.query_one("#update").disabled
             assert app.query_one("#cancel-run").disabled
             assert app.query_one("#retry").disabled
+            assert app.query_one("#verify").disabled
+            assert app.query_one("#empty-trash").disabled
 
     asyncio.run(exercise())
 
@@ -79,6 +114,55 @@ def test_refresh_clears_a_selection_that_is_no_longer_available(monkeypatch) -> 
             assert app.query_one("#scan").disabled
             assert app.query_one("#device-card", Static).content == ""
             assert not app.devices
+
+    asyncio.run(exercise())
+
+
+def test_manual_mountpoint_requires_marker_and_selects_valid_path(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr("ventoy_depot.app.discover_ventoy_devices", lambda: [])
+    monkeypatch.setattr(
+        "ventoy_depot.devices._manual_stable_identifier", lambda _path: "linux-uuid:test"
+    )
+    (tmp_path / ".ventoy").write_text("marker", encoding="utf-8")
+
+    async def exercise() -> None:
+        app = VentoyDepotApp()
+        async with app.run_test() as pilot:
+            app._manual_mount_chosen(tmp_path)
+            await pilot.pause()
+            selected = app.query_one("#device").value
+            assert selected == "manual:linux-uuid:test"
+            assert app.query_one("#scan", Button).disabled is False
+            assert app.devices[str(selected)].detection_reason == "ventoy-marker"
+
+    asyncio.run(exercise())
+
+
+def test_empty_trash_dialog_cancellation_preserves_files(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    trash = tmp_path / ".ventoy-depot" / "trash"
+    trash.mkdir(parents=True)
+    old = trash / "old.iso"
+    old.write_bytes(b"old")
+    device = Device("usb", "Ventoy", tmp_path, 100, 50, True, True, "marker")
+    monkeypatch.setattr("ventoy_depot.app.discover_ventoy_devices", lambda: [device])
+    monkeypatch.setattr("ventoy_depot.app.revalidate_device", lambda _device: None)
+    monkeypatch.setattr("ventoy_depot.transfer.revalidate_device", lambda _device: None)
+
+    async def exercise() -> None:
+        app = VentoyDepotApp()
+        async with app.run_test() as pilot:
+            app.query_one("#device").value = device.identifier
+            await pilot.pause()
+            app.action_empty_trash()
+            await pilot.pause()
+            assert isinstance(app.screen, ConfirmEmptyTrash)
+            await pilot.click("#trash-cancel")
+            await pilot.pause()
+            assert old.exists()
 
     asyncio.run(exercise())
 
@@ -118,6 +202,102 @@ def test_selected_row_shows_literal_checked_marker(monkeypatch, tmp_path: Path) 
             marker = app.query_one("#isos").get_row_at(0)[0]
             assert isinstance(marker, Text)
             assert marker.plain == "[x]"
+
+    asyncio.run(exercise())
+
+
+def test_iso_detail_panel_shows_verification_and_hides_url_query(
+    monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr("ventoy_depot.app.discover_ventoy_devices", lambda: [])
+    iso = tmp_path / "arch.iso"
+    identity = IsoIdentity("arch", "archlinux", None, None, "stable", "x86_64", None, "1", None)
+    item = PlanItem(
+        DetectedIso(iso, identity, 1.0, "filename"),
+        ReleaseArtifact(
+            "2",
+            None,
+            "arch-2.iso",
+            "https://example.test/arch-2.iso?token=secret",
+            1,
+            "sha256",
+            "a" * 64,
+            None,
+            (),
+            frozenset({"example.test"}),
+            identity,
+        ),
+        UpdateAction.SKIP,
+        2,
+        1,
+        VerificationLevel.CHECKSUM,
+        blocking_errors=("blocked for test",),
+    )
+
+    async def exercise() -> None:
+        app = VentoyDepotApp()
+        async with app.run_test() as pilot:
+            app.row_items = [item]
+            app._render_plan()
+            await pilot.pause()
+            details = str(app.query_one("#iso-details", Static).content)
+            assert str(iso) in details
+            assert "SHA256" in details
+            assert "blocked for test" in details
+            assert "token=secret" not in details
+            assert "query hidden" in details
+
+    asyncio.run(exercise())
+
+
+def test_display_url_removes_fragment_and_query_values() -> None:
+    assert _display_url("https://example.test/file.iso?token=secret#fragment") == (
+        "https://example.test/file.iso?[query hidden]"
+    )
+
+
+def test_replace_action_is_explicit_and_selects_the_row(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr("ventoy_depot.app.discover_ventoy_devices", lambda: [])
+    iso = tmp_path / "constant.iso"
+    iso.write_bytes(b"old")
+    identity = IsoIdentity("test", "test", None, None, "stable", "x86_64", None, "1", None)
+    artifact = ReleaseArtifact(
+        "2",
+        None,
+        iso.name,
+        "https://example.test/constant.iso",
+        1,
+        "sha256",
+        "a" * 64,
+        None,
+        (),
+        frozenset({"example.test"}),
+        identity,
+    )
+    item = PlanItem(
+        DetectedIso(iso, identity, 1.0, "test"),
+        artifact,
+        UpdateAction.SKIP,
+        2,
+        1,
+        VerificationLevel.CHECKSUM,
+        replacement_allowed=True,
+    )
+    device = Device("id", "Ventoy", tmp_path, 2, 2, True, True)
+    plan = UpdatePlan(device, (item,), "before")
+
+    async def exercise() -> None:
+        app = VentoyDepotApp()
+        async with app.run_test() as pilot:
+            app.plan = plan
+            app.row_items = [item]
+            app._render_plan()
+            app.action_replace_old()
+            await pilot.pause()
+            assert app.plan is not None
+            assert app.plan.items[0].action == UpdateAction.REPLACE
+            assert iso in app.selected_paths
+            assert app.query_one("#isos").get_row_at(0)[0].plain == "[x]"
 
     asyncio.run(exercise())
 
@@ -173,6 +353,132 @@ def test_assignment_dialog_requires_version(monkeypatch, tmp_path: Path) -> None
             assert "required" in str(app.screen.query_one("#assign-error", Static).content)
 
     asyncio.run(exercise())
+
+
+def test_assignment_dialog_uses_volume_id_as_nonbinding_profile_hint(
+    monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr("ventoy_depot.app.discover_ventoy_devices", lambda: [])
+
+    async def exercise() -> None:
+        app = VentoyDepotApp()
+        async with app.run_test() as pilot:
+            app.push_screen(
+                AssignIdentity(tmp_path / "renamed.iso", "en", "Ubuntu 26.04 LTS amd64")
+            )
+            await pilot.pause()
+            selected = str(app.screen.query_one("#assign-profile").value)
+            assert selected.startswith("ubuntu|")
+            assert any(
+                "Ubuntu 26.04" in str(widget.content) for widget in app.screen.query("Static")
+            )
+
+    asyncio.run(exercise())
+
+
+def test_assignment_dialog_prefills_detected_identity_for_editing(
+    monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr("ventoy_depot.app.discover_ventoy_devices", lambda: [])
+    identity = IsoIdentity(
+        "nobara",
+        "nobara",
+        "kde",
+        "nvidia",
+        "stable",
+        "x86_64",
+        None,
+        "39",
+        "2024-01-24",
+    )
+
+    async def exercise() -> None:
+        app = VentoyDepotApp()
+        async with app.run_test() as pilot:
+            app.push_screen(AssignIdentity(tmp_path / "nobara.iso", "en", identity=identity))
+            await pilot.pause()
+            assert str(app.screen.query_one("#assign-profile", Select).value).startswith("nobara|")
+            assert app.screen.query_one("#assign-edition", Input).value == "kde"
+            assert app.screen.query_one("#assign-flavor", Input).value == "nvidia"
+            assert app.screen.query_one("#assign-version", Input).value == "39"
+            assert app.screen.query_one("#assign-build", Input).value == "2024-01-24"
+
+    asyncio.run(exercise())
+
+
+def test_official_link_dialog_requires_url_and_checksum(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr("ventoy_depot.app.discover_ventoy_devices", lambda: [])
+    identity = IsoIdentity(
+        "windows-11",
+        "windows-11",
+        "multi-edition",
+        "consumer",
+        "stable",
+        "x86_64",
+        "de-de",
+        "25H2",
+        None,
+    )
+    item = PlanItem(
+        DetectedIso(tmp_path / "Win11_25H2_German_x64.iso", identity, 0.98, "filename"),
+        None,
+        UpdateAction.SKIP,
+        100,
+        None,
+        VerificationLevel.UNVERIFIED,
+    )
+
+    async def exercise() -> None:
+        app = VentoyDepotApp()
+        async with app.run_test() as pilot:
+            app.push_screen(OfficialLinkDialog(item, "en"))
+            await pilot.pause()
+            app.screen.query_one("#official-link-save", Button).press()
+            await pilot.pause()
+            assert "required" in str(app.screen.query_one("#official-link-error", Static).content)
+
+    asyncio.run(exercise())
+
+
+def test_add_iso_dialog_builds_versionless_explicit_identity(monkeypatch) -> None:
+    monkeypatch.setattr("ventoy_depot.app.discover_ventoy_devices", lambda: [])
+    arch = next(provider for provider in BUILTIN_PROVIDERS if provider.provider_id == "arch")
+    chosen: list[IsoIdentity | None] = []
+
+    async def exercise() -> None:
+        app = VentoyDepotApp()
+        async with app.run_test() as pilot:
+            app.push_screen(AddIsoDialog((arch,), "en"), chosen.append)
+            await pilot.pause()
+            app.screen.query_one("#add-save", Button).press()
+            await pilot.pause()
+
+    asyncio.run(exercise())
+    assert chosen == [
+        IsoIdentity(
+            "arch",
+            "archlinux",
+            None,
+            None,
+            "stable",
+            "x86_64",
+            None,
+            None,
+            None,
+        )
+    ]
+
+
+def test_add_iso_dialog_excludes_detection_only_providers(monkeypatch) -> None:
+    monkeypatch.setattr("ventoy_depot.app.discover_ventoy_devices", lambda: [])
+    arch = next(provider for provider in BUILTIN_PROVIDERS if provider.provider_id == "arch")
+    windows = next(
+        provider for provider in BUILTIN_PROVIDERS if provider.provider_id == "windows-11"
+    )
+
+    dialog = AddIsoDialog((windows, arch), "en")
+
+    assert {profile.provider_id for profile in dialog.profiles} == {"arch"}
 
 
 def test_keyboard_refresh_is_ignored_while_operation_runs(monkeypatch) -> None:

@@ -121,6 +121,26 @@ def test_manifest_rejects_nested_repetition_regex(tmp_path: Path) -> None:
         load_and_validate_manifest(write_manifest(tmp_path, value))
 
 
+def test_manifest_rejects_unsafe_volume_regex(tmp_path: Path) -> None:
+    value = manifest()
+    value["detection"][0]["volume_regex"] = r"^(.*)+$"  # type: ignore[index]
+    with pytest.raises(SecurityError, match="unsafe"):
+        load_and_validate_manifest(write_manifest(tmp_path, value))
+
+
+def test_manifest_identity_may_reference_volume_regex_group(tmp_path: Path) -> None:
+    value = manifest()
+    value["capabilities"]["architectures"] = ["x86_64", "arm64"]  # type: ignore[index]
+    value["detection"][0]["volume_regex"] = (  # type: ignore[index]
+        r"^Example/(?P<architecture>x86_64|arm64)$"
+    )
+    value["detection"][0]["identity"]["architecture"] = "$group:architecture"  # type: ignore[index]
+
+    loaded = load_and_validate_manifest(write_manifest(tmp_path, value))
+
+    assert loaded["provider_id"] == "example-provider"
+
+
 def test_manifest_rejects_nested_unsafe_artifact_regex(tmp_path: Path) -> None:
     value = manifest()
     value["release_sources"][0]["artifact_regex"] = r"^(\d+)+$"  # type: ignore[index]
@@ -171,6 +191,23 @@ def test_manifest_identity_must_be_declared_in_capabilities(tmp_path: Path) -> N
         load_and_validate_manifest(write_manifest(tmp_path, value))
 
 
+def test_detection_version_template_must_reference_regex_groups(tmp_path: Path) -> None:
+    value = manifest()
+    value["detection"][0]["version_template"] = "{missing}.0"  # type: ignore[index]
+
+    with pytest.raises(SecurityError, match="unknown groups"):
+        load_and_validate_manifest(write_manifest(tmp_path, value))
+
+
+def test_valid_detection_version_template_is_accepted(tmp_path: Path) -> None:
+    value = manifest()
+    value["detection"][0]["version_template"] = "release-{version}"  # type: ignore[index]
+
+    loaded = load_and_validate_manifest(write_manifest(tmp_path, value))
+
+    assert loaded["detection"][0]["version_template"] == "release-{version}"
+
+
 def test_bundled_schema_matches_registry_contract() -> None:
     schema_path = (
         Path(__file__).parents[1] / "src" / "ventoy_depot" / "registry" / "provider-v1.schema.json"
@@ -191,3 +228,46 @@ def test_bundled_schema_matches_registry_contract() -> None:
         schema["$defs"]["signature"]["properties"]["signer_fingerprints"]["items"]["pattern"]
         == "^(?:[A-Fa-f0-9]{40}|[A-Fa-f0-9]{64})$"
     )
+
+
+def test_detection_only_manifest_may_omit_release_sources(tmp_path: Path) -> None:
+    value = manifest()
+    value["release_sources"] = []
+    value["detection"][0]["downloadable"] = False  # type: ignore[index]
+
+    loaded = load_and_validate_manifest(write_manifest(tmp_path, value))
+
+    assert loaded["release_sources"] == []
+
+
+def test_downloadable_manifest_cannot_omit_release_sources(tmp_path: Path) -> None:
+    value = manifest()
+    value["release_sources"] = []
+
+    with pytest.raises(SecurityError, match="requires a release source"):
+        load_and_validate_manifest(write_manifest(tmp_path, value))
+
+
+def test_manifest_accepts_bounded_zip_archive_policy(tmp_path: Path) -> None:
+    value = manifest()
+    value["release_sources"][0]["archive"] = {  # type: ignore[index]
+        "format": "zip",
+        "member_template": "generic.iso",
+        "output_filename_template": "example-{version}.iso",
+        "extracted_size_bytes": 1234,
+    }
+
+    loaded = load_and_validate_manifest(write_manifest(tmp_path, value))
+
+    assert loaded["release_sources"][0]["archive"]["format"] == "zip"
+
+
+def test_manifest_rejects_zip_without_exact_member_template(tmp_path: Path) -> None:
+    value = manifest()
+    value["release_sources"][0]["archive"] = {  # type: ignore[index]
+        "format": "zip",
+        "output_filename_template": "example-{version}.iso",
+    }
+
+    with pytest.raises(SecurityError, match="exact member"):
+        load_and_validate_manifest(write_manifest(tmp_path, value))

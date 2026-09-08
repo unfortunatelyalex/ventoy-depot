@@ -7,6 +7,62 @@ from pathlib import Path
 from ..models import DetectedIso, IsoIdentity, ReleaseArtifact
 from .base import Provider, ProviderCapabilities, ProviderError
 
+_NETBSD_ARCHITECTURES = (
+    "acorn32",
+    "alpha",
+    "amd64",
+    "amiga",
+    "arc",
+    "atari",
+    "cats",
+    "cobalt",
+    "dreamcast",
+    "emips",
+    "evbarm-aarch64",
+    "evbarm-aarch64eb",
+    "evbmips-mips64eb",
+    "evbmips-mips64el",
+    "evbmips-mipseb",
+    "evbmips-mipsel",
+    "evbmips-mipsn64eb",
+    "evbmips-mipsn64el",
+    "evbppc",
+    "evbsh3-sh3eb",
+    "evbsh3-sh3el",
+    "ews4800mips",
+    "hp300",
+    "hpcarm",
+    "hpcmips",
+    "hpcsh",
+    "hppa",
+    "i386",
+    "ia64",
+    "ibmnws",
+    "luna68k",
+    "mac68k",
+    "macppc",
+    "mipsco",
+    "mvme68k",
+    "mvmeppc",
+    "news68k",
+    "newsmips",
+    "next68k",
+    "ofppc",
+    "pmax",
+    "prep",
+    "sandpoint",
+    "sgimips",
+    "shark",
+    "sparc",
+    "sparc64",
+    "sun2",
+    "sun3",
+    "vax",
+    "x68k",
+    "zaurus",
+)
+_NETBSD_ARCH_PATTERN = "|".join(map(re.escape, _NETBSD_ARCHITECTURES))
+
 
 @dataclass(frozen=True)
 class FilenameRule:
@@ -17,6 +73,7 @@ class FilenameRule:
     default_edition: str | None = None
     default_flavor: str | None = None
     default_language: str | None = None
+    version_template: str | None = None
 
 
 class FilenameProvider(Provider):
@@ -34,6 +91,16 @@ class FilenameProvider(Provider):
         self.rules = rules
         self.capabilities = capabilities
 
+    @property
+    def products(self) -> tuple[str, ...]:
+        return tuple(dict.fromkeys(rule.product_id for rule in self.rules))
+
+    @property
+    def supports_automatic_download(self) -> bool:
+        from .resolvers import BUILTIN_RESOLVER_IDS
+
+        return self.provider_id in BUILTIN_RESOLVER_IDS
+
     def detect(self, path: Path) -> DetectedIso | None:
         for rule in self.rules:
             if match := rule.expression.fullmatch(path.name):
@@ -49,7 +116,11 @@ class FilenameProvider(Provider):
                     channel=_lower(values.get("channel")) or rule.default_channel,
                     architecture=architecture,
                     language=_lower(values.get("language") or rule.default_language),
-                    version=values.get("version"),
+                    version=(
+                        rule.version_template.format_map(values)
+                        if rule.version_template is not None
+                        else values.get("version")
+                    ),
                     build=values.get("build"),
                 )
                 return DetectedIso(path, identity, 0.98, "filename")
@@ -85,6 +156,13 @@ class FilenameProvider(Provider):
             and identity.version.startswith("22.")
         ):
             return True
+        if (
+            self.provider_id in {"opensuse-leap", "xcp-ng"}
+            and artifact.version == identity.version
+            and artifact.build
+            and identity.build is None
+        ):
+            return True
         if artifact.version == identity.version and artifact.build and identity.build:
             from ..models import is_newer_version
 
@@ -92,17 +170,263 @@ class FilenameProvider(Provider):
         return super().is_newer(artifact, identity)
 
 
+class OpenBsdProvider(FilenameProvider):
+    """Recognize architecture-free upstream names only when ISO metadata agrees."""
+
+    _architectures = (
+        "alpha",
+        "amd64",
+        "arm64",
+        "hppa",
+        "i386",
+        "loongson",
+        "macppc",
+        "powerpc64",
+        "sparc64",
+    )
+    _official_name = re.compile(r"(?P<kind>install|cd)(?P<compact>\d{2,3})\.iso$", re.I)
+    _volume = re.compile(
+        r"OpenBSD/(?P<architecture>alpha|amd64|arm64|hppa|i386|loongson|macppc|"
+        r"powerpc64|sparc64)\s+(?P<version>\d+\.\d+) "
+        r"(?P<medium>Install|bootonly) CD$",
+        re.I,
+    )
+
+    def __init__(self) -> None:
+        super().__init__(
+            "openbsd",
+            "OpenBSD",
+            (
+                FilenameRule(
+                    re.compile(
+                        r"OpenBSD-(?P<version>\d+\.\d+)-"
+                        r"(?P<architecture>alpha|amd64|arm64|hppa|i386|loongson|"
+                        r"macppc|powerpc64|sparc64)-(?P<edition>install|bootonly)\.iso$",
+                        re.I,
+                    ),
+                    "openbsd",
+                    default_channel="release",
+                ),
+            ),
+            ProviderCapabilities(("install", "bootonly"), self._architectures, (), ("release",)),
+        )
+
+    def detect(self, path: Path) -> DetectedIso | None:
+        if detected := super().detect(path):
+            return detected
+        filename_match = self._official_name.fullmatch(path.name)
+        if filename_match is None:
+            return None
+        from ..iso import read_iso_volume_id
+
+        volume_id = read_iso_volume_id(path)
+        volume_match = self._volume.fullmatch(volume_id or "")
+        if volume_match is None:
+            return None
+        edition = "install" if filename_match.group("kind").lower() == "install" else "bootonly"
+        volume_edition = (
+            "install" if volume_match.group("medium").lower() == "install" else "bootonly"
+        )
+        version = volume_match.group("version")
+        if edition != volume_edition or filename_match.group("compact") != version.replace(".", ""):
+            return None
+        identity = IsoIdentity(
+            self.provider_id,
+            "openbsd",
+            edition,
+            None,
+            "release",
+            volume_match.group("architecture").lower(),
+            None,
+            version,
+            None,
+        )
+        return DetectedIso(path, identity, 1.0, "filename+iso9660-volume-id", volume_id=volume_id)
+
+
+class ArtixProvider(FilenameProvider):
+    """Keep stable and weekly Artix images distinct despite identical upstream names."""
+
+    _stable_images = (
+        ("base", "dinit", "20260813"),
+        ("base", "openrc", "20260813"),
+        ("base", "runit", "20260813"),
+        ("base", "s6", "20260813"),
+        ("cinnamon", "dinit", "20260814"),
+        ("cinnamon", "openrc", "20260814"),
+        ("community-gtk", "openrc", "20260821"),
+        ("community-qt", "openrc", "20260821"),
+        ("lxqt", "runit", "20260816"),
+        ("mate", "dinit", "20260813"),
+        ("mate", "openrc", "20260813"),
+        ("plasma", "dinit", "20260813"),
+        ("plasma", "openrc", "20260813"),
+        ("xfce", "dinit", "20260813"),
+        ("xfce", "openrc", "20260813"),
+    )
+
+    def __init__(self) -> None:
+        normalized = FilenameRule(
+            re.compile(
+                r"artix-(?P<channel>stable)-"
+                r"(?P<edition>base|cinnamon|community-gtk|community-qt|lxqt|mate|plasma|xfce)-"
+                r"(?P<flavor>dinit|openrc|runit|s6)-(?P<version>\d{8})-"
+                r"(?P<architecture>x86_64)\.iso$",
+                re.I,
+            ),
+            "artix-linux",
+        )
+        upstream = tuple(
+            FilenameRule(
+                re.compile(
+                    rf"artix-{re.escape(edition)}-{re.escape(init)}-"
+                    rf"(?P<version>{date})-x86_64\.iso$",
+                    re.I,
+                ),
+                "artix-linux",
+                default_channel="stable",
+                default_architecture="x86_64",
+                default_edition=edition,
+                default_flavor=init,
+            )
+            for edition, init, date in self._stable_images
+        )
+        super().__init__(
+            "artix-linux",
+            "Artix Linux",
+            (normalized, *upstream),
+            ProviderCapabilities(
+                (
+                    "base",
+                    "cinnamon",
+                    "community-gtk",
+                    "community-qt",
+                    "lxqt",
+                    "mate",
+                    "plasma",
+                    "xfce",
+                ),
+                ("x86_64",),
+                (),
+                ("stable",),
+                ("dinit", "openrc", "runit", "s6"),
+            ),
+        )
+
+
 def _lower(value: str | None) -> str | None:
     return value.lower() if value else None
 
 
 def _architecture(value: str) -> str:
-    return {"64bit": "x86_64", "64-bit": "x86_64", "x64": "x86_64", "all": "amd64"}.get(
-        value.lower(), value.lower()
-    )
+    return {
+        "64bit": "x86_64",
+        "64-bit": "x86_64",
+        "x64": "x86_64",
+        "x86-64": "x86_64",
+        "x32": "x86",
+        "all": "amd64",
+    }.get(value.lower(), value.lower())
+
+
+def _ubuntu_flavor_rules() -> tuple[FilenameRule, ...]:
+    rules: list[FilenameRule] = []
+    for product in (
+        "kubuntu",
+        "lubuntu",
+        "xubuntu",
+        "ubuntu-budgie",
+        "ubuntu-unity",
+        "ubuntu-mate",
+        "ubuntucinnamon",
+        "edubuntu",
+        "ubuntustudio",
+        "ubuntukylin",
+    ):
+        name = re.escape(product)
+        rules.extend(
+            (
+                FilenameRule(
+                    re.compile(
+                        rf"{name}-(?P<version>(?:2[02468]|[02468]\d)\.04(?:\.\d+)?)-"
+                        r"desktop-(?P<architecture>amd64)\.iso$",
+                        re.I,
+                    ),
+                    product,
+                    "lts",
+                    default_edition="desktop",
+                ),
+                FilenameRule(
+                    re.compile(
+                        rf"{name}-(?P<version>\d{{2}}\.(?!04(?:\.|-))\d{{2}}(?:\.\d+)?)-"
+                        r"desktop-(?P<architecture>amd64)\.iso$",
+                        re.I,
+                    ),
+                    product,
+                    "interim",
+                    default_edition="desktop",
+                ),
+            )
+        )
+    return tuple(rules)
 
 
 BUILTIN_PROVIDERS: tuple[Provider, ...] = (
+    FilenameProvider(
+        "adelie-linux",
+        "Adélie Linux",
+        (
+            FilenameRule(
+                re.compile(
+                    r"adelie-(?P<edition>inst)-(?P<architecture>aarch64|armv7|pmmx|ppc|ppc64|x86_64)-"
+                    r"(?P<version>\d+\.\d+-beta\d+)-(?P<build>\d{8})\.iso$",
+                    re.I,
+                ),
+                "adelie-linux",
+                default_channel="beta",
+            ),
+            FilenameRule(
+                re.compile(
+                    r"adelie-(?P<edition>live)-(?P<flavor>kde|lxqt|mate|xfce)-"
+                    r"(?P<architecture>aarch64|armv7|pmmx|ppc|ppc64|x86_64)-"
+                    r"(?P<version>\d+\.\d+-beta\d+)-(?P<build>\d{8})\.iso$",
+                    re.I,
+                ),
+                "adelie-linux",
+                default_channel="beta",
+            ),
+        ),
+        ProviderCapabilities(
+            ("inst", "live"),
+            ("aarch64", "armv7", "pmmx", "ppc", "ppc64", "x86_64"),
+            (),
+            ("beta",),
+            ("kde", "lxqt", "mate", "xfce"),
+        ),
+    ),
+    FilenameProvider(
+        "kaos",
+        "KaOS",
+        (
+            FilenameRule(
+                re.compile(
+                    r"KaOS-(?P<edition>DINIT)-(?P<version>\d{4}\.\d{2})-"
+                    r"(?P<architecture>x86_64)\.iso$",
+                    re.I,
+                ),
+                "kaos",
+            ),
+            FilenameRule(
+                re.compile(
+                    r"KaOS-(?P<version>\d{4}\.\d{2})-(?P<architecture>x86_64)\.iso$",
+                    re.I,
+                ),
+                "kaos",
+                default_edition="systemd",
+            ),
+        ),
+        ProviderCapabilities(("dinit", "systemd"), ("x86_64",), (), ("stable",)),
+    ),
     FilenameProvider(
         "arch",
         "Arch Linux",
@@ -116,6 +440,22 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
             ),
         ),
         ProviderCapabilities((), ("x86_64",), (), ("stable",)),
+    ),
+    ArtixProvider(),
+    FilenameProvider(
+        "backbox",
+        "BackBox Linux",
+        (
+            FilenameRule(
+                re.compile(
+                    r"backbox-(?P<version>\d+(?:\.\d+)*)-(?P<edition>desktop)-"
+                    r"(?P<architecture>amd64)\.iso$",
+                    re.I,
+                ),
+                "backbox",
+            ),
+        ),
+        ProviderCapabilities(("desktop",), ("amd64",), (), ("stable",)),
     ),
     FilenameProvider(
         "alpine",
@@ -134,6 +474,27 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
         ProviderCapabilities(
             ("standard", "extended", "virtual", "xen"),
             ("x86", "x86_64", "aarch64", "armv7", "loongarch64", "ppc64le", "riscv64", "s390x"),
+            (),
+            ("stable",),
+        ),
+    ),
+    FilenameProvider(
+        "chimera-linux",
+        "Chimera Linux",
+        (
+            FilenameRule(
+                re.compile(
+                    r"chimera-linux-(?P<architecture>aarch64|loongarch64|ppc|ppc64|"
+                    r"ppc64le|riscv64|x86_64)-LIVE-(?P<version>\d{8})-"
+                    r"(?P<edition>base|gnome|plasma)\.iso$",
+                    re.I,
+                ),
+                "chimera-linux",
+            ),
+        ),
+        ProviderCapabilities(
+            ("base", "gnome", "plasma"),
+            ("aarch64", "loongarch64", "ppc", "ppc64", "ppc64le", "riscv64", "x86_64"),
             (),
             ("stable",),
         ),
@@ -201,6 +562,27 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
         ),
     ),
     FilenameProvider(
+        "oracle-linux",
+        "Oracle Linux",
+        (
+            FilenameRule(
+                re.compile(
+                    r"OracleLinux-R(?P<version>(?P<channel>8|9|10)-U\d+)-"
+                    r"(?:Server-)?(?P<architecture>x86_64|aarch64)-"
+                    r"(?P<edition>dvd|boot|boot-uek)\.iso$",
+                    re.I,
+                ),
+                "oracle-linux",
+            ),
+        ),
+        ProviderCapabilities(
+            ("dvd", "boot", "boot-uek"),
+            ("x86_64", "aarch64"),
+            (),
+            ("8", "9", "10"),
+        ),
+    ),
+    FilenameProvider(
         "ubuntu",
         "Ubuntu",
         (
@@ -224,6 +606,12 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
         ProviderCapabilities(
             ("desktop", "live-server"), ("amd64", "arm64"), (), ("lts", "interim")
         ),
+    ),
+    FilenameProvider(
+        "ubuntu-flavors",
+        "Official Ubuntu flavors",
+        _ubuntu_flavor_rules(),
+        ProviderCapabilities(("desktop",), ("amd64",), (), ("lts", "interim")),
     ),
     FilenameProvider(
         "debian",
@@ -254,6 +642,37 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
         ),
     ),
     FilenameProvider(
+        "devuan",
+        "Devuan GNU+Linux",
+        (
+            FilenameRule(
+                re.compile(
+                    r"devuan_[a-z]+_(?P<version>\d+(?:\.\d+)+)_"
+                    r"(?P<architecture>amd64)_(?P<edition>netinstall|server|desktop|"
+                    r"desktop-live|cd2|cd3|cd4|cd5|pool1)\.iso$",
+                    re.I,
+                ),
+                "devuan",
+            ),
+        ),
+        ProviderCapabilities(
+            (
+                "netinstall",
+                "server",
+                "desktop",
+                "desktop-live",
+                "cd2",
+                "cd3",
+                "cd4",
+                "cd5",
+                "pool1",
+            ),
+            ("amd64",),
+            (),
+            ("stable",),
+        ),
+    ),
+    FilenameProvider(
         "fedora",
         "Fedora",
         (
@@ -266,7 +685,10 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
             ),
             FilenameRule(
                 re.compile(
-                    r"Fedora-(?P<edition>Workstation|KDE-Desktop)-(?P<flavor>Live)-(?P<version>\d+)-(?P<build>\d+(?:\.\d+)+)\.(?P<architecture>x86_64|aarch64)\.iso$",
+                    r"Fedora-(?P<edition>Workstation|KDE-Desktop|Budgie|COSMIC|Cinnamon|"
+                    r"KDE-Mobile|LXDE|LXQt|MATE_Compiz|MiracleWM|SoaS|Sway|Xfce|i3)-"
+                    r"(?P<flavor>Live)-(?P<version>\d+)-(?P<build>\d+(?:\.\d+)+)\."
+                    r"(?P<architecture>x86_64|aarch64)\.iso$",
                     re.I,
                 ),
                 "fedora",
@@ -287,7 +709,25 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
             ),
         ),
         ProviderCapabilities(
-            ("workstation", "server", "kde", "kde-desktop", "silverblue", "iot"),
+            (
+                "workstation",
+                "server",
+                "kde",
+                "kde-desktop",
+                "silverblue",
+                "budgie",
+                "cosmic",
+                "cinnamon",
+                "kde-mobile",
+                "lxde",
+                "lxqt",
+                "mate_compiz",
+                "miraclewm",
+                "soas",
+                "sway",
+                "xfce",
+                "i3",
+            ),
             ("x86_64", "aarch64"),
             (),
             ("stable",),
@@ -307,7 +747,7 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
                 default_architecture="x86_64",
             ),
         ),
-        ProviderCapabilities(("cinnamon", "mate", "xfce"), ("x86_64",), (), ("stable",)),
+        ProviderCapabilities(("cinnamon", "mate", "xfce"), ("x86_64",), (), ("stable",), ("edge",)),
     ),
     FilenameProvider(
         "endeavouros",
@@ -477,6 +917,7 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
             ("x86_64",),
             (),
             ("stable",),
+            ("nvidia",),
         ),
     ),
     FilenameProvider(
@@ -493,6 +934,63 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
             ),
         ),
         ProviderCapabilities(("live",), ("amd64",), (), ("stable",)),
+    ),
+    FilenameProvider(
+        "finnix",
+        "Finnix",
+        (
+            FilenameRule(
+                re.compile(r"finnix-(?P<version>\d+(?:\.\d+)?)\.iso$", re.I),
+                "finnix",
+                default_edition="live",
+                default_architecture="amd64",
+            ),
+        ),
+        ProviderCapabilities(("live",), ("amd64",), (), ("stable",)),
+    ),
+    FilenameProvider(
+        "alt-rescue",
+        "ALT Rescue",
+        (
+            FilenameRule(
+                re.compile(
+                    r"alt-(?P<channel>p10)-(?P<edition>rescue)-"
+                    r"(?P<version>\d{8})-(?P<architecture>i586|x86_64)\.iso$",
+                    re.I,
+                ),
+                "alt-rescue",
+            ),
+            FilenameRule(
+                re.compile(
+                    r"alt-(?P<channel>p11)-(?P<edition>rescue|rescue-live)-"
+                    r"(?P<version>\d{8})-(?P<architecture>x86_64)\.iso$",
+                    re.I,
+                ),
+                "alt-rescue",
+            ),
+        ),
+        ProviderCapabilities(
+            ("rescue", "rescue-live"),
+            ("i586", "x86_64"),
+            (),
+            ("p10", "p11"),
+        ),
+    ),
+    FilenameProvider(
+        "urbackup-restore",
+        "UrBackup Restore Stick",
+        (
+            FilenameRule(
+                re.compile(
+                    r"urbackup_restore_(?P<version>\d+(?:\.\d+)+)\.iso$",
+                    re.I,
+                ),
+                "urbackup-restore",
+                default_edition="restore",
+                default_architecture="x86_64",
+            ),
+        ),
+        ProviderCapabilities(("restore",), ("x86_64",), (), ("stable",)),
     ),
     FilenameProvider(
         "kali-linux",
@@ -555,6 +1053,27 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
         ProviderCapabilities(("live",), ("amd64",), (), ("stable",)),
     ),
     FilenameProvider(
+        "super-grub2-disk",
+        "Super Grub2 Disk",
+        (
+            FilenameRule(
+                re.compile(
+                    r"supergrub2-classic-(?P<version>\d+\.\d+s\d+)-"
+                    r"(?P<edition>multiarch|i386_pc|x86_64_efi|i386_efi)-CD\.iso$",
+                    re.I,
+                ),
+                "super-grub2-disk",
+                default_architecture="multiarch",
+            ),
+        ),
+        ProviderCapabilities(
+            ("multiarch", "i386_pc", "x86_64_efi", "i386_efi"),
+            ("multiarch",),
+            (),
+            ("stable",),
+        ),
+    ),
+    FilenameProvider(
         "opensuse-tumbleweed",
         "openSUSE Tumbleweed",
         (
@@ -585,6 +1104,46 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
         ),
     ),
     FilenameProvider(
+        "opensuse-leap",
+        "openSUSE Leap",
+        (
+            FilenameRule(
+                re.compile(
+                    r"openSUSE-Leap-(?P<version>15\.6)-(?P<edition>DVD|NET)-"
+                    r"(?P<architecture>x86_64|aarch64|ppc64le|s390x)-Media\.iso$",
+                    re.I,
+                ),
+                "opensuse-leap",
+                default_channel="15.6",
+            ),
+            FilenameRule(
+                re.compile(
+                    r"Leap-(?P<version>16\.0)-(?P<edition>offline|online)-installer-"
+                    r"(?P<architecture>x86_64|aarch64|ppc64le|s390x)-"
+                    r"Build(?P<build>\d+(?:\.\d+)+)\.install\.iso$",
+                    re.I,
+                ),
+                "opensuse-leap",
+                default_channel="16.0",
+            ),
+            FilenameRule(
+                re.compile(
+                    r"Leap-(?P<version>16\.0)-(?P<edition>offline|online)-installer-"
+                    r"(?P<architecture>x86_64|aarch64|ppc64le|s390x)\.install\.iso$",
+                    re.I,
+                ),
+                "opensuse-leap",
+                default_channel="16.0",
+            ),
+        ),
+        ProviderCapabilities(
+            ("dvd", "net", "offline", "online"),
+            ("x86_64", "aarch64", "ppc64le", "s390x"),
+            (),
+            ("15.6", "16.0"),
+        ),
+    ),
+    FilenameProvider(
         "freebsd",
         "FreeBSD",
         (
@@ -604,6 +1163,49 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
             (),
             ("release",),
         ),
+    ),
+    OpenBsdProvider(),
+    FilenameProvider(
+        "omnios",
+        "OmniOS",
+        (
+            FilenameRule(
+                re.compile(r"omnios-stable-r(?P<version>\d+[a-z]?)\.iso$", re.I),
+                "omnios",
+                default_channel="stable",
+                default_architecture="x86_64",
+                default_edition="installer",
+            ),
+            FilenameRule(
+                re.compile(r"omnios-r(?P<version>151058)\.iso$", re.I),
+                "omnios",
+                default_channel="stable",
+                default_architecture="x86_64",
+                default_edition="installer",
+            ),
+            FilenameRule(
+                re.compile(r"omnios-lts-r(?P<version>\d+[a-z]?)\.iso$", re.I),
+                "omnios",
+                default_channel="lts",
+                default_architecture="x86_64",
+                default_edition="installer",
+            ),
+            FilenameRule(
+                re.compile(r"omnios-r(?P<version>151054r)\.iso$", re.I),
+                "omnios",
+                default_channel="lts",
+                default_architecture="x86_64",
+                default_edition="installer",
+            ),
+            FilenameRule(
+                re.compile(r"omnios-bloody-(?P<version>\d{8})\.iso$", re.I),
+                "omnios",
+                default_channel="bloody",
+                default_architecture="x86_64",
+                default_edition="installer",
+            ),
+        ),
+        ProviderCapabilities(("installer",), ("x86_64",), (), ("stable", "lts", "bloody")),
     ),
     FilenameProvider(
         "grml",
@@ -744,6 +1346,236 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
         ProviderCapabilities(("grub", "bare"), ("i586", "x86_64", "loongarch64"), (), ("stable",)),
     ),
     FilenameProvider(
+        "freedos",
+        "FreeDOS",
+        (
+            FilenameRule(
+                re.compile(r"FD(?P<major>\d)(?P<minor>\d)LIVE\.iso$", re.I),
+                "freedos",
+                default_architecture="i386",
+                default_edition="livecd",
+                version_template="{major}.{minor}",
+            ),
+            FilenameRule(
+                re.compile(r"FD(?P<major>\d)(?P<minor>\d)LGCY\.iso$", re.I),
+                "freedos",
+                default_architecture="i386",
+                default_edition="legacycd",
+                version_template="{major}.{minor}",
+            ),
+        ),
+        ProviderCapabilities(("livecd", "legacycd"), ("i386",), (), ("stable",)),
+    ),
+    FilenameProvider(
+        "reactos",
+        "ReactOS",
+        (
+            FilenameRule(
+                re.compile(r"ReactOS-(?P<version>\d+(?:\.\d+)+)-i386\.iso$", re.I),
+                "reactos",
+                default_architecture="i386",
+                default_edition="unified",
+            ),
+        ),
+        ProviderCapabilities(("unified",), ("i386",), (), ("stable",)),
+    ),
+    FilenameProvider(
+        "deepin",
+        "deepin",
+        (
+            FilenameRule(
+                re.compile(
+                    r"deepin-desktop-community-(?P<version>\d+(?:\.\d+)+)-"
+                    r"(?P<architecture>amd64|arm64|loong64)\.iso$",
+                    re.I,
+                ),
+                "deepin",
+                default_edition="desktop-community",
+            ),
+            FilenameRule(
+                re.compile(
+                    r"deepin-desktop-community-(?P<version>\d+(?:\.\d+)+)-riscv64\.iso$",
+                    re.I,
+                ),
+                "deepin",
+                default_channel="preview",
+                default_architecture="riscv64",
+                default_edition="desktop-community",
+            ),
+        ),
+        ProviderCapabilities(
+            ("desktop-community",),
+            ("amd64", "arm64", "loong64", "riscv64"),
+            (),
+            ("stable", "preview"),
+        ),
+    ),
+    FilenameProvider(
+        "garuda-linux",
+        "Garuda Linux",
+        (
+            FilenameRule(
+                re.compile(
+                    r"garuda-(?P<edition>dr460nized-gaming|dr460nized|kde-lite|"
+                    r"cinnamon|gnome|hyprland|i3|mokka|sway|xfce)-linux-"
+                    r"(?:garuda|lts|zen)-(?P<version>\d{6})\.iso$",
+                    re.I,
+                ),
+                "garuda-linux",
+                default_channel="rolling",
+                default_architecture="x86_64",
+            ),
+        ),
+        ProviderCapabilities(
+            (
+                "cinnamon",
+                "dr460nized",
+                "dr460nized-gaming",
+                "gnome",
+                "hyprland",
+                "i3",
+                "kde-lite",
+                "mokka",
+                "sway",
+                "xfce",
+            ),
+            ("x86_64",),
+            (),
+            ("rolling",),
+        ),
+    ),
+    FilenameProvider(
+        "sparkylinux",
+        "SparkyLinux",
+        (
+            FilenameRule(
+                re.compile(
+                    r"sparkylinux-(?P<version>\d+(?:\.\d+)+)-"
+                    r"(?P<architecture>x86_64|i686-pae)-"
+                    r"(?P<edition>lxqt|mate|xfce|kde|minimalgui|minimalcli)\.iso$",
+                    re.I,
+                ),
+                "sparkylinux",
+            ),
+        ),
+        ProviderCapabilities(
+            ("lxqt", "mate", "xfce", "kde", "minimalgui", "minimalcli"),
+            ("x86_64", "i686-pae"),
+            (),
+            ("stable",),
+        ),
+    ),
+    FilenameProvider(
+        "drift-linux",
+        "DRIFT Linux",
+        (
+            FilenameRule(
+                re.compile(r"drift-linux-FAST-hybrid\.iso$", re.I),
+                "drift-linux",
+                default_edition="fast",
+                default_architecture="x86_64",
+            ),
+            FilenameRule(
+                re.compile(r"drift-linux-FAST-XS-hybrid\.iso$", re.I),
+                "drift-linux",
+                default_edition="fast-xs",
+                default_architecture="x86_64",
+            ),
+        ),
+        ProviderCapabilities(("fast", "fast-xs"), ("x86_64",), (), ("stable",)),
+    ),
+    FilenameProvider(
+        "linux-lite",
+        "Linux Lite",
+        (
+            FilenameRule(
+                re.compile(r"linux-lite-(?P<version>\d+(?:\.\d+)+)-64bit\.iso$", re.I),
+                "linux-lite",
+                default_edition="desktop",
+                default_architecture="x86_64",
+            ),
+        ),
+        ProviderCapabilities(("desktop",), ("x86_64",), (), ("stable",)),
+    ),
+    FilenameProvider(
+        "tsurugi-linux",
+        "Tsurugi Linux",
+        (
+            FilenameRule(
+                re.compile(r"tsurugi_linux_(?P<version>\d+(?:\.\d+)+)\.iso$", re.I),
+                "tsurugi-linux",
+                default_edition="lab",
+                default_architecture="x86_64",
+            ),
+            FilenameRule(
+                re.compile(r"tsurugi_acquire_(?P<version>\d+(?:\.\d+)+)\.iso$", re.I),
+                "tsurugi-linux",
+                default_edition="acquire",
+                default_architecture="i386",
+            ),
+        ),
+        ProviderCapabilities(("lab", "acquire"), ("x86_64", "i386"), (), ("stable",)),
+    ),
+    FilenameProvider(
+        "archbang",
+        "ArchBang",
+        (
+            FilenameRule(
+                re.compile(
+                    r"archbang-(?P<day>\d{2})(?P<month>\d{2})(?P<year>\d{2})"
+                    r"(?:[-_]x86_64)?\.iso$",
+                    re.I,
+                ),
+                "archbang",
+                default_edition="desktop",
+                default_channel="rolling",
+                default_architecture="x86_64",
+                version_template="20{year}.{month}.{day}",
+            ),
+        ),
+        ProviderCapabilities(("desktop",), ("x86_64",), (), ("rolling",)),
+    ),
+    FilenameProvider(
+        "puppy-linux",
+        "Puppy Linux",
+        (
+            FilenameRule(
+                re.compile(r"BookwormPup64_(?P<version>\d+(?:\.\d+)+)\.iso$", re.I),
+                "puppy-linux",
+                default_edition="bookwormpup64",
+                default_architecture="x86_64",
+            ),
+        ),
+        ProviderCapabilities(("bookwormpup64",), ("x86_64",), (), ("stable",)),
+    ),
+    FilenameProvider(
+        "bodhi-linux",
+        "Bodhi Linux",
+        (
+            FilenameRule(
+                re.compile(
+                    r"bodhi-(?P<version>\d+(?:\.\d+)+)-64(?:-(?P<edition>hwe|s76|apppack))?\.iso$",
+                    re.I,
+                ),
+                "bodhi-linux",
+                default_edition="standard",
+                default_architecture="x86_64",
+            ),
+            FilenameRule(
+                re.compile(r"bodhi-(?P<version>\d+(?:\.\d+)+)-legacy\.iso$", re.I),
+                "bodhi-linux",
+                default_edition="legacy",
+                default_architecture="i386",
+            ),
+        ),
+        ProviderCapabilities(
+            ("standard", "hwe", "s76", "apppack", "legacy"),
+            ("x86_64", "i386"),
+            (),
+            ("stable",),
+        ),
+    ),
+    FilenameProvider(
         "vanilla-os",
         "Vanilla OS",
         (
@@ -811,6 +1643,78 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
         ),
     ),
     FilenameProvider(
+        "windows-10",
+        "Windows 10",
+        (
+            FilenameRule(
+                re.compile(
+                    r"Win10_(?P<version>\d{2}H\d)_German_"
+                    r"(?P<architecture>x64|x32)(?:v(?P<build>\d+))?\.iso$",
+                    re.I,
+                ),
+                "windows-10",
+                default_edition="multi-edition",
+                default_flavor="consumer",
+                default_language="de-de",
+            ),
+            FilenameRule(
+                re.compile(
+                    r"Win10_(?P<version>\d{2}H\d)_English_"
+                    r"(?P<architecture>x64|x32)(?:v(?P<build>\d+))?\.iso$",
+                    re.I,
+                ),
+                "windows-10",
+                default_edition="multi-edition",
+                default_flavor="consumer",
+                default_language="en-us",
+            ),
+            FilenameRule(
+                re.compile(
+                    r"Win10_(?P<version>\d{2}H\d)_EnglishInternational_"
+                    r"(?P<architecture>x64|x32)(?:v(?P<build>\d+))?\.iso$",
+                    re.I,
+                ),
+                "windows-10",
+                default_edition="multi-edition",
+                default_flavor="consumer",
+                default_language="en-gb",
+            ),
+        ),
+        ProviderCapabilities(
+            ("multi-edition",),
+            ("x86_64", "x86"),
+            ("de-de", "en-us", "en-gb"),
+            ("stable",),
+            ("consumer",),
+        ),
+    ),
+    FilenameProvider(
+        "windows-server",
+        "Windows Server Evaluation",
+        (
+            FilenameRule(
+                re.compile(
+                    r"(?:(?P<build>\d+\.\d+\.\d{6}-\d{4}\.[A-Za-z0-9_-]+)_)?"
+                    r"SERVER_EVAL_x64FRE_(?P<language>en-us|de-de|es-es|fr-fr|it-it|"
+                    r"ja-jp|ru-ru|zh-cn)\.iso$",
+                    re.I,
+                ),
+                "windows-server",
+                default_architecture="x86_64",
+                default_edition="evaluation",
+                default_flavor="standard-datacenter",
+                default_channel="evaluation",
+            ),
+        ),
+        ProviderCapabilities(
+            ("evaluation",),
+            ("x86_64",),
+            ("en-us", "de-de", "es-es", "fr-fr", "it-it", "ja-jp", "ru-ru", "zh-cn"),
+            ("evaluation",),
+            ("standard-datacenter",),
+        ),
+    ),
+    FilenameProvider(
         "zorin-os",
         "Zorin OS",
         (
@@ -827,6 +1731,1126 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
             ("x86_64",),
             (),
             ("stable",),
+        ),
+    ),
+    FilenameProvider(
+        "netboot-xyz",
+        "netboot.xyz",
+        (
+            FilenameRule(
+                re.compile(r"netboot\.xyz\.iso$", re.I),
+                "netboot-xyz",
+                default_architecture="x86_64",
+                default_edition="standard",
+            ),
+            FilenameRule(
+                re.compile(r"netboot\.xyz-legacy\.iso$", re.I),
+                "netboot-xyz",
+                default_architecture="x86_64",
+                default_edition="legacy",
+            ),
+            FilenameRule(
+                re.compile(r"netboot\.xyz-arm64\.iso$", re.I),
+                "netboot-xyz",
+                default_architecture="arm64",
+                default_edition="standard",
+            ),
+        ),
+        ProviderCapabilities(("standard", "legacy"), ("x86_64", "arm64"), (), ("stable",)),
+    ),
+    FilenameProvider(
+        "gentoo",
+        "Gentoo Linux",
+        (
+            FilenameRule(
+                re.compile(
+                    r"install-(?P<architecture>amd64|arm64|x86)-minimal-"
+                    r"(?P<version>\d{8}T\d{6}Z)\.iso$",
+                    re.I,
+                ),
+                "gentoo",
+                default_edition="minimal",
+            ),
+            FilenameRule(
+                re.compile(r"livegui-amd64-(?P<version>\d{8}T\d{6}Z)\.iso$", re.I),
+                "gentoo",
+                default_architecture="amd64",
+                default_edition="livegui",
+            ),
+        ),
+        ProviderCapabilities(("minimal", "livegui"), ("amd64", "arm64", "x86"), (), ("stable",)),
+    ),
+    FilenameProvider(
+        "hirens-bootcd-pe",
+        "Hiren's BootCD PE",
+        (
+            FilenameRule(
+                re.compile(r"HBCD_PE_x64\.iso$", re.I),
+                "hirens-bootcd-pe",
+                default_architecture="x86_64",
+                default_edition="pe",
+            ),
+        ),
+        ProviderCapabilities(("pe",), ("x86_64",), (), ("stable",)),
+    ),
+    FilenameProvider(
+        "shredos",
+        "ShredOS",
+        (
+            FilenameRule(
+                re.compile(
+                    r"shredos-(?P<version>\d{4}\.\d+_\d+)_"
+                    r"(?P<architecture>x86-64|i686)_v"
+                    r"(?P<build>\d+(?:\.\d+)+_\d{8})"
+                    r"(?:_(?P<edition>lite))?"
+                    r"(?:_(?P<flavor>plus-partition))?\.iso$",
+                    re.I,
+                ),
+                "shredos",
+                default_edition="standard",
+            ),
+        ),
+        ProviderCapabilities(
+            ("standard", "lite"),
+            ("x86_64", "i686"),
+            (),
+            ("stable",),
+            ("plus-partition",),
+        ),
+    ),
+    FilenameProvider(
+        "netbsd",
+        "NetBSD",
+        (
+            FilenameRule(
+                re.compile(
+                    r"NetBSD-(?P<version>\d+(?:\.\d+)+)-"
+                    r"(?P<architecture>amd64|i386|sparc64)-dvd\.iso$",
+                    re.I,
+                ),
+                "netbsd",
+                default_edition="dvd",
+                default_channel="release",
+            ),
+            FilenameRule(
+                re.compile(
+                    r"NetBSD-(?P<version>\d+(?:\.\d+)+)-"
+                    rf"(?P<architecture>{_NETBSD_ARCH_PATTERN})\.iso$",
+                    re.I,
+                ),
+                "netbsd",
+                default_edition="installer",
+                default_channel="release",
+            ),
+        ),
+        ProviderCapabilities(("installer", "dvd"), _NETBSD_ARCHITECTURES, (), ("release",)),
+    ),
+    FilenameProvider(
+        "openindiana",
+        "OpenIndiana Hipster",
+        (
+            FilenameRule(
+                re.compile(
+                    r"OI-hipster-(?P<edition>gui|text|minimal)-"
+                    r"(?P<version>\d{8})\.iso$",
+                    re.I,
+                ),
+                "openindiana",
+                default_channel="rolling",
+                default_architecture="x86_64",
+            ),
+        ),
+        ProviderCapabilities(
+            ("gui", "text", "minimal"),
+            ("x86_64",),
+            (),
+            ("rolling",),
+        ),
+    ),
+    FilenameProvider(
+        "xcp-ng",
+        "XCP-ng",
+        (
+            FilenameRule(
+                re.compile(
+                    r"xcp-ng-(?P<version>\d+(?:\.\d+){2})"
+                    r"(?:-(?P<build>\d{8}(?:\.\d+)?))?"
+                    r"(?:-(?P<edition>netinstall))?\.iso$",
+                    re.I,
+                ),
+                "xcp-ng",
+                default_channel="lts",
+                default_architecture="x86_64",
+                default_edition="full",
+            ),
+        ),
+        ProviderCapabilities(("full", "netinstall"), ("x86_64",), (), ("lts",)),
+    ),
+    FilenameProvider(
+        "porteux",
+        "PorteuX",
+        (
+            FilenameRule(
+                re.compile(
+                    r"porteux-(?P<version>\d+(?:\.\d+)+)-(?P<channel>current|stable)-"
+                    r"(?P<edition>cinnamon|cosmic|gnome|kde|lxde|lxqt|mate|xfce)-"
+                    r"(?P<build>[A-Za-z0-9.]+)-(?P<architecture>x86_64)\.iso$",
+                    re.I,
+                ),
+                "porteux",
+            ),
+        ),
+        ProviderCapabilities(
+            ("cinnamon", "cosmic", "gnome", "kde", "lxde", "lxqt", "mate", "xfce"),
+            ("x86_64",),
+            (),
+            ("current", "stable"),
+        ),
+    ),
+    FilenameProvider(
+        "ghostbsd",
+        "GhostBSD",
+        (
+            FilenameRule(
+                re.compile(
+                    r"GhostBSD-(?P<version>\d+(?:\.\d+)+-R\d+(?:\.\d+)+p\d+)\.iso$",
+                    re.I,
+                ),
+                "ghostbsd",
+                default_edition="mate",
+                default_channel="official",
+                default_architecture="amd64",
+            ),
+            FilenameRule(
+                re.compile(
+                    r"GhostBSD-(?P<version>\d+(?:\.\d+)+-R\d+(?:\.\d+)+p\d+)-"
+                    r"(?P<edition>XFCE)\.iso$",
+                    re.I,
+                ),
+                "ghostbsd",
+                default_channel="community",
+                default_architecture="amd64",
+            ),
+            FilenameRule(
+                re.compile(
+                    r"GhostBSD-(?P<version>\d+(?:\.\d+)+-R\d+(?:\.\d+)+p\d+)-"
+                    r"(?P<edition>GERSHWIN)\.iso$",
+                    re.I,
+                ),
+                "ghostbsd",
+                default_channel="preview",
+                default_architecture="amd64",
+            ),
+        ),
+        ProviderCapabilities(
+            ("mate", "xfce", "gershwin"),
+            ("amd64",),
+            (),
+            ("official", "community", "preview"),
+        ),
+    ),
+    FilenameProvider(
+        "haiku",
+        "Haiku",
+        (
+            FilenameRule(
+                re.compile(
+                    r"haiku-(?P<version>r\d+beta\d+)-"
+                    r"(?P<architecture>x86_64|x86_gcc2h)-(?P<edition>anyboot)\.iso$",
+                    re.I,
+                ),
+                "haiku",
+            ),
+        ),
+        ProviderCapabilities(("anyboot",), ("x86_64", "x86_gcc2h"), (), ("stable",)),
+    ),
+    FilenameProvider(
+        "solus",
+        "Solus",
+        (
+            FilenameRule(
+                re.compile(
+                    r"Solus-(?P<edition>Budgie|GNOME|Plasma|Xfce)-Release-"
+                    r"(?P<version>\d{4}-\d{2}-\d{2})\.iso$",
+                    re.I,
+                ),
+                "solus",
+                default_architecture="x86_64",
+            ),
+        ),
+        ProviderCapabilities(("budgie", "gnome", "plasma", "xfce"), ("x86_64",), (), ("stable",)),
+    ),
+    FilenameProvider(
+        "truenas",
+        "TrueNAS Community Edition",
+        (
+            FilenameRule(
+                re.compile(r"TrueNAS-SCALE-(?P<version>\d+(?:\.\d+)+)\.iso$", re.I),
+                "truenas",
+                default_edition="community",
+                default_architecture="x86_64",
+            ),
+            FilenameRule(
+                re.compile(r"TrueNAS-(?P<version>\d+(?:\.\d+)+-BETA\.\d+)\.iso$", re.I),
+                "truenas",
+                default_edition="community",
+                default_channel="beta",
+                default_architecture="x86_64",
+            ),
+        ),
+        ProviderCapabilities(("community",), ("x86_64",), (), ("stable", "beta")),
+    ),
+    FilenameProvider(
+        "tuxedo-os",
+        "TUXEDO OS",
+        (
+            FilenameRule(
+                re.compile(r"TUXEDO-OS-(?P<version>\d{12})\.iso$", re.I),
+                "tuxedo-os",
+                default_architecture="x86_64",
+                default_edition="desktop",
+            ),
+        ),
+        ProviderCapabilities(("desktop",), ("x86_64",), (), ("stable",)),
+    ),
+    FilenameProvider(
+        "kde-neon",
+        "KDE neon",
+        (
+            FilenameRule(
+                re.compile(
+                    r"neon-(?P<channel>user|testing|unstable)-(?P<edition>desktop)-"
+                    r"(?P<version>\d{8}-\d{4})\.iso$",
+                    re.I,
+                ),
+                "kde-neon",
+                default_architecture="x86_64",
+            ),
+        ),
+        ProviderCapabilities(("desktop",), ("x86_64",), (), ("user", "testing", "unstable")),
+    ),
+    FilenameProvider(
+        "parrot-os",
+        "Parrot OS",
+        (
+            FilenameRule(
+                re.compile(
+                    r"Parrot-(?:spin-)?(?P<edition>home|security|enlightenment|htb|lxqt|mate)-"
+                    r"(?P<version>\d+\.\d+)_(?P<architecture>amd64)\.iso$",
+                    re.I,
+                ),
+                "parrot-os",
+            ),
+        ),
+        ProviderCapabilities(
+            ("home", "security", "enlightenment", "htb", "lxqt", "mate"),
+            ("amd64",),
+            (),
+            ("stable",),
+        ),
+    ),
+    FilenameProvider(
+        "void-linux",
+        "Void Linux",
+        (
+            FilenameRule(
+                re.compile(
+                    r"void-live-(?P<architecture>x86_64|i686|aarch64|asahi)"
+                    r"(?:-(?P<flavor>musl))?-(?P<version>\d{8})-"
+                    r"(?P<edition>base|xfce)\.iso$",
+                    re.I,
+                ),
+                "void-linux",
+                default_flavor="glibc",
+            ),
+        ),
+        ProviderCapabilities(
+            ("base", "xfce"),
+            ("x86_64", "i686", "aarch64", "asahi"),
+            (),
+            ("stable",),
+            ("glibc", "musl"),
+        ),
+    ),
+    FilenameProvider(
+        "mageia",
+        "Mageia",
+        (
+            FilenameRule(
+                re.compile(
+                    r"Mageia-(?P<version>\d+)-(?P<architecture>x86_64|i686)\.iso$",
+                    re.I,
+                ),
+                "mageia",
+                default_edition="classic",
+            ),
+            FilenameRule(
+                re.compile(
+                    r"Mageia-(?P<version>\d+)-Live-(?P<edition>GNOME|Plasma)-"
+                    r"(?P<architecture>x86_64)\.iso$",
+                    re.I,
+                ),
+                "mageia",
+            ),
+            FilenameRule(
+                re.compile(
+                    r"Mageia-(?P<version>\d+)-Live-(?P<edition>Xfce)-"
+                    r"(?P<architecture>x86_64|i686)\.iso$",
+                    re.I,
+                ),
+                "mageia",
+            ),
+        ),
+        ProviderCapabilities(
+            ("classic", "gnome", "plasma", "xfce"),
+            ("x86_64", "i686"),
+            (),
+            ("stable",),
+        ),
+    ),
+    FilenameProvider(
+        "flatcar",
+        "Flatcar Container Linux",
+        (
+            FilenameRule(
+                re.compile(
+                    r"flatcar-(?P<channel>stable|beta|alpha|lts)-"
+                    r"(?P<version>\d+(?:\.\d+)+)-(?P<architecture>amd64)\.iso$",
+                    re.I,
+                ),
+                "flatcar",
+                default_edition="live-iso",
+            ),
+        ),
+        ProviderCapabilities(("live-iso",), ("amd64",), (), ("stable", "beta", "alpha", "lts")),
+    ),
+    FilenameProvider(
+        "fedora-coreos",
+        "Fedora CoreOS",
+        (
+            FilenameRule(
+                re.compile(
+                    r"fedora-coreos-(?P<channel>stable|testing|next)-"
+                    r"(?P<version>\d+\.\d+\.\d+\.\d+)-live-iso\."
+                    r"(?P<architecture>x86_64|aarch64)\.iso$",
+                    re.I,
+                ),
+                "fedora-coreos",
+                default_edition="live-iso",
+            ),
+        ),
+        ProviderCapabilities(
+            ("live-iso",), ("x86_64", "aarch64"), (), ("stable", "testing", "next")
+        ),
+    ),
+    FilenameProvider(
+        "harvester",
+        "Harvester HCI",
+        (
+            FilenameRule(
+                re.compile(
+                    r"harvester-v(?P<version>\d+(?:\.\d+)+)-"
+                    r"(?P<architecture>amd64|arm64)\.iso$",
+                    re.I,
+                ),
+                "harvester",
+                default_edition="full",
+            ),
+            FilenameRule(
+                re.compile(
+                    r"harvester-v(?P<version>\d+(?:\.\d+)+)-"
+                    r"(?P<architecture>amd64)-net-install\.iso$",
+                    re.I,
+                ),
+                "harvester",
+                default_edition="netinstall",
+            ),
+        ),
+        ProviderCapabilities(("full", "netinstall"), ("amd64", "arm64"), (), ("stable",)),
+    ),
+    FilenameProvider(
+        "ipfire",
+        "IPFire",
+        (
+            FilenameRule(
+                re.compile(
+                    r"ipfire-(?P<version>\d+(?:\.\d+)+)-core(?P<build>\d+)-"
+                    r"(?P<architecture>x86_64|aarch64)\.iso$",
+                    re.I,
+                ),
+                "ipfire",
+                default_edition="installer",
+            ),
+        ),
+        ProviderCapabilities(("installer",), ("x86_64", "aarch64"), (), ("stable",)),
+    ),
+    FilenameProvider(
+        "opnsense",
+        "OPNsense",
+        (
+            FilenameRule(
+                re.compile(
+                    r"OPNsense-(?P<version>\d+(?:\.\d+)+)-(?:OpenSSL-)?"
+                    r"(?P<edition>dvd|cdrom)-(?P<architecture>amd64)\.iso$",
+                    re.I,
+                ),
+                "opnsense",
+            ),
+        ),
+        ProviderCapabilities(("dvd", "cdrom"), ("amd64",), (), ("stable",)),
+    ),
+    FilenameProvider(
+        "pfsense-ce",
+        "pfSense Community Edition",
+        (
+            FilenameRule(
+                re.compile(
+                    r"pfSense-CE-(?P<version>\d+(?:\.\d+)+)-RELEASE-"
+                    r"(?P<architecture>amd64)\.iso$",
+                    re.I,
+                ),
+                "pfsense-ce",
+                default_edition="dvd",
+            ),
+        ),
+        ProviderCapabilities(("dvd",), ("amd64",), (), ("stable",)),
+    ),
+    FilenameProvider(
+        "redo-rescue",
+        "Redo Rescue",
+        (
+            FilenameRule(
+                re.compile(r"redorescue-(?P<version>\d+(?:\.\d+)+)\.iso$", re.I),
+                "redo-rescue",
+                default_edition="live",
+                default_architecture="amd64",
+            ),
+        ),
+        ProviderCapabilities(("live",), ("amd64",), (), ("stable",)),
+    ),
+    FilenameProvider(
+        "ultimate-boot-cd",
+        "Ultimate Boot CD",
+        (
+            FilenameRule(
+                re.compile(r"ubcd(?P<version>\d{3,})\.iso$", re.I),
+                "ultimate-boot-cd",
+                default_edition="diagnostics",
+                default_architecture="x86",
+            ),
+        ),
+        ProviderCapabilities(("diagnostics",), ("x86",), (), ("stable",)),
+    ),
+    FilenameProvider(
+        "centos-stream",
+        "CentOS Stream",
+        (
+            FilenameRule(
+                re.compile(
+                    r"CentOS-Stream-(?P<channel>9|10)-"
+                    r"(?P<version>latest|\d{8}\.\d+)-"
+                    r"(?P<architecture>x86_64|aarch64)-(?P<edition>boot|dvd1)\.iso$",
+                    re.I,
+                ),
+                "centos-stream",
+            ),
+        ),
+        ProviderCapabilities(
+            ("boot", "dvd1"),
+            ("x86_64", "aarch64"),
+            (),
+            ("9", "10"),
+        ),
+    ),
+    FilenameProvider(
+        "bunsenlabs",
+        "BunsenLabs",
+        (
+            FilenameRule(
+                re.compile(
+                    r"[a-z]+-(?P<version>\d+)-(?P<build>\d{6})-"
+                    r"(?P<architecture>amd64)\.hybrid\.iso$",
+                    re.I,
+                ),
+                "bunsenlabs",
+                default_edition="desktop",
+            ),
+        ),
+        ProviderCapabilities(("desktop",), ("amd64",), (), ("stable",)),
+    ),
+    FilenameProvider(
+        "security-onion",
+        "Security Onion",
+        (
+            FilenameRule(
+                re.compile(
+                    r"securityonion-(?P<version>\d+(?:\.\d+)+)-"
+                    r"(?P<build>\d{8})\.iso$",
+                    re.I,
+                ),
+                "security-onion",
+                default_edition="installer",
+                default_architecture="x86_64",
+            ),
+        ),
+        ProviderCapabilities(("installer",), ("x86_64",), (), ("stable",)),
+    ),
+    FilenameProvider(
+        "talos-linux",
+        "Talos Linux",
+        (
+            FilenameRule(
+                re.compile(r"metal-(?P<architecture>amd64|arm64)\.iso$", re.I),
+                "talos-linux",
+                default_edition="metal",
+            ),
+        ),
+        ProviderCapabilities(("metal",), ("amd64", "arm64"), (), ("stable",)),
+    ),
+    FilenameProvider(
+        "antix",
+        "antiX Linux",
+        (
+            FilenameRule(
+                re.compile(
+                    r"antiX-(?P<version>\d+(?:\.\d+)*)_(?P<architecture>x64|386)-"
+                    r"(?P<edition>full|base|core)\.iso$",
+                    re.I,
+                ),
+                "antix",
+            ),
+            FilenameRule(
+                re.compile(
+                    r"antiX-(?P<version>\d+(?:\.\d+)*)-net_"
+                    r"(?P<architecture>x64|386)-(?P<edition>net)\.iso$",
+                    re.I,
+                ),
+                "antix",
+            ),
+        ),
+        ProviderCapabilities(
+            ("full", "base", "core", "net"),
+            ("x86_64", "386"),
+            (),
+            ("stable",),
+        ),
+    ),
+    FilenameProvider(
+        "mx-linux",
+        "MX Linux",
+        (
+            FilenameRule(
+                re.compile(
+                    r"MX-(?P<version>\d+(?:\.\d+)*)_(?P<edition>Xfce)_"
+                    r"(?P<architecture>x64)\.iso$",
+                    re.I,
+                ),
+                "mx-linux",
+                default_flavor="standard",
+            ),
+            FilenameRule(
+                re.compile(
+                    r"MX-(?P<version>\d+(?:\.\d+)*)_(?P<edition>Xfce)_"
+                    r"(?P<flavor>ahs)_(?P<architecture>x64)\.iso$",
+                    re.I,
+                ),
+                "mx-linux",
+            ),
+            FilenameRule(
+                re.compile(
+                    r"MX-(?P<version>\d+(?:\.\d+)*)_(?P<edition>KDE)_"
+                    r"(?P<architecture>x64)\.iso$",
+                    re.I,
+                ),
+                "mx-linux",
+                default_flavor="ahs",
+            ),
+            FilenameRule(
+                re.compile(
+                    r"MX-(?P<version>\d+(?:\.\d+)*)_(?P<edition>fluxbox)_"
+                    r"(?P<architecture>x64)\.iso$",
+                    re.I,
+                ),
+                "mx-linux",
+                default_flavor="standard",
+            ),
+        ),
+        ProviderCapabilities(
+            ("xfce", "kde", "fluxbox"),
+            ("x86_64",),
+            (),
+            ("stable",),
+            ("standard", "ahs"),
+        ),
+    ),
+    FilenameProvider(
+        "caine",
+        "CAINE",
+        (
+            FilenameRule(
+                re.compile(r"caine(?P<version>\d+(?:\.\d+)*)\.iso$", re.I),
+                "caine",
+                default_edition="forensics-live",
+                default_architecture="x86_64",
+            ),
+        ),
+        ProviderCapabilities(("forensics-live",), ("x86_64",), (), ("stable",)),
+    ),
+    FilenameProvider(
+        "kaisen-linux",
+        "Kaisen Linux",
+        (
+            FilenameRule(
+                re.compile(
+                    r"kaisenlinuxrolling(?P<version>\d+(?:\.\d+)*)-amd64-"
+                    r"(?P<edition>KDE|LXQT|MATE|XFCE)\.iso$",
+                    re.I,
+                ),
+                "kaisen-linux",
+                default_channel="rolling",
+                default_architecture="amd64",
+            ),
+            FilenameRule(
+                re.compile(
+                    r"kaisenlinuxrolling(?P<version>\d+(?:\.\d+)*)-amd64-SR\.iso$",
+                    re.I,
+                ),
+                "kaisen-linux",
+                default_channel="rolling",
+                default_architecture="amd64",
+                default_edition="system-rescue",
+            ),
+            FilenameRule(
+                re.compile(
+                    r"kaisenlinuxrolling(?P<version>\d+(?:\.\d+)*)-amd64-NETINST\.iso$",
+                    re.I,
+                ),
+                "kaisen-linux",
+                default_channel="rolling",
+                default_architecture="amd64",
+                default_edition="netinst",
+            ),
+        ),
+        ProviderCapabilities(
+            ("kde", "lxqt", "mate", "xfce", "system-rescue", "netinst"),
+            ("amd64",),
+            (),
+            ("rolling",),
+        ),
+    ),
+    FilenameProvider(
+        "casuarina-linux",
+        "Casuarina Linux",
+        (
+            FilenameRule(
+                re.compile(
+                    r"casuarina-linux-(?P<architecture>x86_64)-LIVE-"
+                    r"(?P<version>\d{8})-(?P<edition>base)\.iso$",
+                    re.I,
+                ),
+                "casuarina-linux",
+                default_channel="preview",
+            ),
+        ),
+        ProviderCapabilities(("base",), ("x86_64",), (), ("preview",)),
+    ),
+    FilenameProvider(
+        "boot-repair-disk",
+        "Boot-Repair-Disk",
+        (
+            FilenameRule(
+                re.compile(r"boot-repair-disk-64bit\.iso$", re.I),
+                "boot-repair-disk",
+                default_edition="live",
+                default_architecture="x86_64",
+            ),
+        ),
+        ProviderCapabilities(("live",), ("x86_64",), (), ("stable",)),
+    ),
+    FilenameProvider(
+        "blackarch",
+        "BlackArch Linux",
+        (
+            FilenameRule(
+                re.compile(
+                    r"blackarch-linux-(?P<edition>full|slim|netinst)-"
+                    r"(?P<version>\d{4}\.\d{2}\.\d{2})-x86_64\.iso$",
+                    re.I,
+                ),
+                "blackarch",
+                default_channel="rolling",
+                default_architecture="x86_64",
+            ),
+        ),
+        ProviderCapabilities(("full", "slim", "netinst"), ("x86_64",), (), ("rolling",)),
+    ),
+    FilenameProvider(
+        "q4os",
+        "Q4OS",
+        (
+            FilenameRule(
+                re.compile(r"q4os-(?P<version>\d+(?:\.\d+)+)-x64\.r(?P<build>\d+)\.iso$", re.I),
+                "q4os",
+                default_edition="plasma-live",
+                default_architecture="x86_64",
+            ),
+            FilenameRule(
+                re.compile(r"q4os-(?P<version>\d+(?:\.\d+)+)-x64-tde\.r(?P<build>\d+)\.iso$", re.I),
+                "q4os",
+                default_edition="trinity-live",
+                default_architecture="x86_64",
+            ),
+            FilenameRule(
+                re.compile(
+                    r"q4os-(?P<version>\d+(?:\.\d+)+)-x64-instcd\.r(?P<build>\d+)\.iso$",
+                    re.I,
+                ),
+                "q4os",
+                default_edition="trinity-install",
+                default_architecture="x86_64",
+            ),
+            FilenameRule(
+                re.compile(
+                    r"q4os-(?P<version>\d+(?:\.\d+)+)-i386-instcd\.r(?P<build>\d+)\.iso$",
+                    re.I,
+                ),
+                "q4os",
+                default_edition="trinity-install",
+                default_channel="old-stable",
+                default_architecture="i386",
+            ),
+        ),
+        ProviderCapabilities(
+            ("plasma-live", "trinity-live", "trinity-install"),
+            ("x86_64", "i386"),
+            (),
+            ("stable", "old-stable"),
+        ),
+    ),
+    FilenameProvider(
+        "peppermint-os",
+        "Peppermint OS",
+        (
+            FilenameRule(
+                re.compile(r"peppermint_(?P<edition>debian|devuan)-amd64\.iso$", re.I),
+                "peppermint-os",
+                default_channel="manual",
+                default_architecture="amd64",
+            ),
+        ),
+        ProviderCapabilities(("debian", "devuan"), ("amd64",), (), ("manual",)),
+    ),
+    FilenameProvider(
+        "fatdog64",
+        "Fatdog64",
+        (
+            FilenameRule(
+                re.compile(r"Fatdog64-(?P<version>\d+)\.iso$", re.I),
+                "fatdog64",
+                default_edition="live",
+                default_architecture="x86_64",
+            ),
+        ),
+        ProviderCapabilities(("live",), ("x86_64",), (), ("stable",)),
+    ),
+    FilenameProvider(
+        "slax",
+        "Slax",
+        (
+            FilenameRule(
+                re.compile(r"slax-64bit-(?P<version>\d+(?:\.\d+)+)\.iso$", re.I),
+                "slax",
+                default_edition="debian",
+                default_architecture="x86_64",
+            ),
+            FilenameRule(
+                re.compile(r"slax-32bit-(?P<version>\d+(?:\.\d+)+)\.iso$", re.I),
+                "slax",
+                default_edition="debian",
+                default_architecture="i386",
+            ),
+            FilenameRule(
+                re.compile(r"slax-64bit-slackware-(?P<version>\d+(?:\.\d+)+)\.iso$", re.I),
+                "slax",
+                default_edition="slackware",
+                default_architecture="x86_64",
+            ),
+            FilenameRule(
+                re.compile(r"slax-32bit-slackware-(?P<version>\d+(?:\.\d+)+)\.iso$", re.I),
+                "slax",
+                default_edition="slackware",
+                default_architecture="i386",
+            ),
+        ),
+        ProviderCapabilities(("debian", "slackware"), ("x86_64", "i386"), (), ("stable",)),
+    ),
+    FilenameProvider(
+        "openmediavault",
+        "openmediavault",
+        (
+            FilenameRule(
+                re.compile(r"openmediavault_(?P<version>8(?:\.\d+)+)-amd64\.iso$", re.I),
+                "openmediavault",
+                default_edition="installer",
+                default_architecture="amd64",
+            ),
+            FilenameRule(
+                re.compile(r"openmediavault_(?P<version>7(?:\.\d+)+)-amd64\.iso$", re.I),
+                "openmediavault",
+                default_edition="installer",
+                default_channel="oldstable",
+                default_architecture="amd64",
+            ),
+        ),
+        ProviderCapabilities(("installer",), ("amd64",), (), ("stable", "oldstable")),
+    ),
+    FilenameProvider(
+        "archcraft",
+        "Archcraft",
+        (
+            FilenameRule(
+                re.compile(
+                    r"archcraft-(?P<version>\d{4}\.\d{2}\.\d{2})-x86_64\.iso$",
+                    re.I,
+                ),
+                "archcraft",
+                default_edition="main",
+                default_channel="rolling",
+                default_architecture="x86_64",
+            ),
+        ),
+        ProviderCapabilities(("main",), ("x86_64",), (), ("rolling",)),
+    ),
+    FilenameProvider(
+        "rescatux",
+        "Rescatux",
+        (
+            FilenameRule(
+                re.compile(r"rescatux-(?P<version>\d+(?:\.\d+)+)\.iso$", re.I),
+                "rescatux",
+                default_edition="repair",
+                default_architecture="multiarch",
+            ),
+        ),
+        ProviderCapabilities(("repair",), ("multiarch",), (), ("stable",)),
+    ),
+    FilenameProvider(
+        "rhino-linux",
+        "Rhino Linux",
+        (
+            FilenameRule(
+                re.compile(
+                    r"Rhino-Linux-(?P<version>\d+(?:\.\d+)+)-"
+                    r"(?P<architecture>amd64|arm64)(?:-(?P<edition>lomiri))?\.iso$",
+                    re.I,
+                ),
+                "rhino-linux",
+                default_edition="unicorn",
+                default_channel="rolling",
+            ),
+        ),
+        ProviderCapabilities(("unicorn", "lomiri"), ("amd64", "arm64"), (), ("rolling",)),
+    ),
+    FilenameProvider(
+        "porteus",
+        "Porteus",
+        (
+            FilenameRule(
+                re.compile(
+                    r"Porteus-(?P<edition>CINNAMON|GNOME|KDE|LXDE|LXQT|MATE|OPENBOX|XFCE)-"
+                    r"v(?P<version>\d+(?:\.\d+)+)-(?P<architecture>x86_64)\.iso$",
+                    re.I,
+                ),
+                "porteus",
+                default_channel="stable",
+            ),
+        ),
+        ProviderCapabilities(
+            ("cinnamon", "gnome", "kde", "lxde", "lxqt", "mate", "openbox", "xfce"),
+            ("x86_64",),
+            (),
+            ("stable",),
+        ),
+    ),
+    FilenameProvider(
+        "drweb-livedisk",
+        "Dr.Web LiveDisk",
+        (
+            FilenameRule(
+                re.compile(r"drweb-livedisk-(?P<version>\d+)-cd\.iso$", re.I),
+                "drweb-livedisk",
+                default_edition="rescue",
+                default_channel="stable",
+                default_architecture="x86_64",
+            ),
+        ),
+        ProviderCapabilities(("rescue",), ("x86_64",), (), ("stable",)),
+    ),
+    FilenameProvider(
+        "midnightbsd",
+        "MidnightBSD",
+        (
+            FilenameRule(
+                re.compile(
+                    r"MidnightBSD-(?P<version>\d+(?:\.\d+)+)--"
+                    r"(?P<architecture>amd64|i386)-(?P<edition>disc1|bootonly)\.iso$",
+                    re.I,
+                ),
+                "midnightbsd",
+                default_channel="release",
+            ),
+        ),
+        ProviderCapabilities(("disc1", "bootonly"), ("amd64", "i386"), (), ("release",)),
+    ),
+    FilenameProvider(
+        "dragonflybsd",
+        "DragonFly BSD",
+        (
+            FilenameRule(
+                re.compile(
+                    r"dfly-(?P<architecture>x86_64)-(?P<version>\d+(?:\.\d+)+)_REL\.iso$",
+                    re.I,
+                ),
+                "dragonflybsd",
+                default_edition="installer",
+                default_channel="release",
+            ),
+            FilenameRule(
+                re.compile(
+                    r"dfly-(?P<architecture>x86_64)-(?P<version>\d+(?:\.\d+)+)_"
+                    r"(?P<build>RC\d+)\.iso$",
+                    re.I,
+                ),
+                "dragonflybsd",
+                default_edition="installer",
+                default_channel="candidate",
+            ),
+        ),
+        ProviderCapabilities(("installer",), ("x86_64",), (), ("release", "candidate")),
+    ),
+    FilenameProvider(
+        "archboot",
+        "Archboot",
+        (
+            FilenameRule(
+                re.compile(
+                    r"archboot-(?P<version>\d{4}\.\d{2}\.\d{2})-"
+                    r"(?P<build>\d{2}\.\d{2})-\d+(?:\.\d+)+-arch\d+-\d+"
+                    r"(?:-(?P<flavor>latest|local))?-(?P<architecture>x86_64)\.iso$",
+                    re.I,
+                ),
+                "archboot",
+                default_edition="rescue-installer",
+                default_flavor="standard",
+                default_channel="rolling",
+            ),
+        ),
+        ProviderCapabilities(
+            ("rescue-installer",),
+            ("x86_64",),
+            (),
+            ("rolling",),
+            ("standard", "latest", "local"),
+        ),
+    ),
+    FilenameProvider(
+        "knoppix",
+        "KNOPPIX",
+        (
+            FilenameRule(
+                re.compile(
+                    r"KNOPPIX_V(?P<version>\d+(?:\.\d+)+)DVD-\d{4}-\d{2}-\d{2}-"
+                    r"(?P<language>DE|EN)\.iso$",
+                    re.I,
+                ),
+                "knoppix",
+                default_edition="dvd",
+                default_architecture="multiarch",
+            ),
+            FilenameRule(
+                re.compile(
+                    r"KNOPPIX_V(?P<version>\d+(?:\.\d+)+)-\d{4}-\d{2}-\d{2}-"
+                    r"(?P<language>DE|EN)\.iso$",
+                    re.I,
+                ),
+                "knoppix",
+                default_edition="cd",
+                default_architecture="multiarch",
+            ),
+        ),
+        ProviderCapabilities(("dvd", "cd"), ("multiarch",), ("de", "en"), ("stable",)),
+    ),
+    FilenameProvider(
+        "mabox-linux",
+        "Mabox Linux",
+        (
+            FilenameRule(
+                re.compile(
+                    r"mabox-linux-(?P<version>\d+(?:\.\d+)+)-[A-Za-z0-9._+-]+-"
+                    r"(?P<build>\d{6})-linux\d+\.iso$",
+                    re.I,
+                ),
+                "mabox-linux",
+                default_edition="desktop",
+                default_channel="rolling",
+                default_architecture="x86_64",
+            ),
+        ),
+        ProviderCapabilities(("desktop",), ("x86_64",), (), ("rolling",)),
+    ),
+    FilenameProvider(
+        "calculate-linux",
+        "Calculate Linux",
+        (
+            FilenameRule(
+                re.compile(
+                    r"(?P<edition>ccm|cds|cld|cldc|cldl|cldm|cldx|cldxs|cls|css)-"
+                    r"(?P<version>\d{8})-(?P<architecture>x86_64)\.iso$",
+                    re.I,
+                ),
+                "calculate-linux",
+                default_channel="rolling",
+            ),
+        ),
+        ProviderCapabilities(
+            ("ccm", "cds", "cld", "cldc", "cldl", "cldm", "cldx", "cldxs", "cls", "css"),
+            ("x86_64",),
+            (),
+            ("rolling",),
+        ),
+    ),
+    FilenameProvider(
+        "openeuler",
+        "openEuler",
+        (
+            FilenameRule(
+                re.compile(
+                    r"openEuler-(?P<version>\d{2}\.03-LTS(?:-SP\d+)?)-"
+                    r"(?:(?P<edition>netinst|everything)-)?"
+                    r"(?P<architecture>x86_64|aarch64|riscv64|loongarch64)-dvd\.iso$",
+                    re.I,
+                ),
+                "openeuler",
+                default_edition="dvd",
+                default_channel="lts",
+            ),
+            FilenameRule(
+                re.compile(
+                    r"openEuler-(?P<version>\d{2}\.(?:03|09))-"
+                    r"(?:(?P<edition>netinst|everything)-)?"
+                    r"(?P<architecture>x86_64|aarch64|riscv64|loongarch64)-dvd\.iso$",
+                    re.I,
+                ),
+                "openeuler",
+                default_edition="dvd",
+                default_channel="interim",
+            ),
+        ),
+        ProviderCapabilities(
+            ("dvd", "netinst", "everything"),
+            ("x86_64", "aarch64", "riscv64", "loongarch64"),
+            (),
+            ("lts", "interim"),
         ),
     ),
 )
