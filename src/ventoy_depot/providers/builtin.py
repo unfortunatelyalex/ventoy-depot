@@ -2518,4 +2518,54 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
         ),
         ProviderCapabilities(("debian", "slackware"), ("x86_64", "i386"), (), ("stable",)),
     ),
+    FilenameProvider(
+        "openmediavault",
+        "openmediavault",
+        (
+            FilenameRule(
+                re.compile(r"openmediavault_(?P<version>8(?:\.\d+)+)-amd64\.iso$", re.I),
+                "openmediavault",
+                default_edition="installer",
+                default_architecture="amd64",
+            ),
+            FilenameRule(
+                re.compile(r"openmediavault_(?P<version>7(?:\.\d+)+)-amd64\.iso$", re.I),
+                "openmediavault",
+                default_edition="installer",
+                default_channel="oldstable",
+                default_architecture="amd64",
+            ),
+        ),
+        ProviderCapabilities(("installer",), ("amd64",), (), ("stable", "oldstable")),
+    ),
+    FilenameProvider(
+        "archcraft",
+        "Archcraft",
+        (
+            FilenameRule(
+                re.compile(
+                    r"archcraft-(?P<version>\d{4}\.\d{2}\.\d{2})-x86_64\.iso$",
+                    re.I,
+                ),
+                "archcraft",
+                default_edition="main",
+                default_channel="rolling",
+                default_architecture="x86_64",
+            ),
+        ),
+        ProviderCapabilities(("main",), ("x86_64",), (), ("rolling",)),
+    ),
+    FilenameProvider(
+        "rescatux",
+        "Rescatux",
+        (
+            FilenameRule(
+                re.compile(r"rescatux-(?P<version>\d+(?:\.\d+)+)\.iso$", re.I),
+                "rescatux",
+                default_edition="repair",
+                default_architecture="multiarch",
+            ),
+        ),
+        ProviderCapabilities(("repair",), ("multiarch",), (), ("stable",)),
+    ),
 )

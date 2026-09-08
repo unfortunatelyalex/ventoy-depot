@@ -3199,3 +3199,87 @@ def test_bodhi_linux_resolver_preserves_edition_and_uses_sha256(
     assert artifact.download_url.endswith(f"/{filename}/download?use_mirror=netix")
     assert artifact.identity is not None
     assert artifact.identity.variant_key() == installed.variant_key()
+
+
+@pytest.mark.parametrize(
+    ("channel", "expected_version", "expected_checksum"),
+    [("stable", "8.3.1", "c" * 64), ("oldstable", "7.4.17", "d" * 64)],
+)
+def test_openmediavault_resolver_keeps_release_channel(
+    monkeypatch, channel: str, expected_version: str, expected_checksum: str
+) -> None:
+    page = f"""
+    <a href="https://sourceforge.net/projects/openmediavault/files/iso/8.3.1/openmediavault_8.3.1-amd64.iso">Stable</a>
+    SHA256: <code>{"c" * 64}</code>
+    <a href="https://sourceforge.net/projects/openmediavault/files/iso/7.4.17/openmediavault_7.4.17-amd64.iso">Oldstable</a>
+    SHA256: <code>{"d" * 64}</code>
+    """
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, requested: str) -> bytes:
+            assert requested == "https://www.openmediavault.org/download.html"
+            return page.encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "openmediavault",
+        "openmediavault",
+        "installer",
+        None,
+        channel,
+        "amd64",
+        None,
+        "1.0",
+        None,
+    )
+
+    artifact = resolvers.resolve_release("openmediavault", installed)
+
+    assert artifact.version == expected_version
+    assert artifact.filename == f"openmediavault_{expected_version}-amd64.iso"
+    assert artifact.checksum == expected_checksum
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()
+
+
+def test_archcraft_resolver_uses_release_path_and_sha256_sidecar(monkeypatch) -> None:
+    filename = "archcraft-2026.08.01-x86_64.iso"
+    digest = "e" * 64
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, requested: str) -> bytes:
+            if requested == "https://sourceforge.net/projects/archcraft/best_release.json":
+                return json.dumps(
+                    {"release": {"filename": f"/v26.08/{filename}", "bytes": 3734601728}}
+                ).encode()
+            assert requested.endswith(f"/v26.08/{filename}.sha256sum/download?use_mirror=netix")
+            return f"{digest}  {filename}\n".encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "archcraft",
+        "archcraft",
+        "main",
+        None,
+        "rolling",
+        "x86_64",
+        None,
+        "2026.05.12",
+        None,
+    )
+
+    artifact = resolvers.resolve_release("archcraft", installed)
+
+    assert artifact.version == "2026.08.01"
+    assert artifact.filename == filename
+    assert artifact.size_bytes == 3734601728
+    assert artifact.checksum == digest
+    assert artifact.download_url.endswith(f"/v26.08/{filename}/download?use_mirror=netix")
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()

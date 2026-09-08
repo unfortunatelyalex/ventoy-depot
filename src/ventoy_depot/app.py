@@ -317,6 +317,8 @@ _ASSIGNMENT_PROFILES = (
     ("Puppy Linux BookwormPup64", "puppy-linux", "puppy-linux", "x86_64"),
     ("Bodhi Linux", "bodhi-linux", "bodhi-linux", "x86_64"),
     ("Bodhi Linux Legacy", "bodhi-linux", "bodhi-linux", "i386"),
+    ("openmediavault", "openmediavault", "openmediavault", "amd64"),
+    ("Archcraft", "archcraft", "archcraft", "x86_64"),
     ("Omarchy", "omarchy", "omarchy", "x86_64"),
     ("Manjaro", "manjaro", "manjaro", "x86_64"),
     ("Pop!_OS", "pop-os", "pop-os", "amd64"),

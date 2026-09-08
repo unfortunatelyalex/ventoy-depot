@@ -53,7 +53,7 @@ Microsoft HTTPS hosts or a regular local file outside the Ventoy drive, and a fi
 product, language, architecture, edition and channel match the existing ISO, then uses the
 same confirmation and transactional transfer pipeline as other updates.
 
-Automatic official resolution currently covers Adélie Linux, antiX Linux, Arch Linux, ArchBang, Artix Linux, MX Linux, CAINE, Casuarina Linux,
+Automatic official resolution currently covers Adélie Linux, antiX Linux, Arch Linux, ArchBang, Archcraft, Artix Linux, MX Linux, CAINE, Casuarina Linux,
 BackBox Linux, Bodhi Linux, BunsenLabs, Ubuntu, Kubuntu, Lubuntu,
 Xubuntu, Ubuntu Budgie, Ubuntu Unity, Ubuntu MATE, Ubuntu Cinnamon, Edubuntu,
 Ubuntu Studio, Ubuntu Kylin, Debian, Devuan, Fedora
@@ -62,12 +62,12 @@ Linux Mint stable editions,
 EndeavourOS, CachyOS, Clonezilla, Gentoo, GhostBSD, GParted Live, Grml, Haiku,
 deepin, DRIFT Linux, FreeDOS, Garuda Linux, Harvester HCI, Hiren's BootCD PE, Kali Linux, Kaisen Linux, KaOS, KDE neon, Linux Lite, Memtest86+, OPNsense, Puppy Linux BookwormPup64, ReactOS, Security Onion, SparkyLinux, Talos Linux, Tsurugi Linux,
 netboot.xyz, NixOS, SystemRescue, Super Grub2 Disk, ALT Rescue, Finnix, UrBackup Restore Stick,
-OpenBSD, openSUSE Leap, openSUSE Tumbleweed, FreeBSD, OpenIndiana Hipster, OmniOS, Omarchy, Parrot OS,
+OpenBSD, openSUSE Leap, openSUSE Tumbleweed, FreeBSD, OpenIndiana Hipster, OmniOS, Omarchy, openmediavault, Parrot OS,
 Pop!_OS, PorteuX, Mageia,
 Proxmox, XCP-ng, Rescuezilla, Solus, TrueNAS Community Edition, TUXEDO OS, Void Linux, Vanilla OS and the free Zorin OS
 editions and Tails. IPFire, pfSense Community Edition, Redo Rescue, Ultimate Boot CD,
 Windows 10/11, Windows Server Evaluation, Qubes OS, BlackArch, Boot-Repair-Disk,
-Fatdog64, Peppermint OS, Q4OS and Slax are
+Fatdog64, Peppermint OS, Q4OS, Rescatux and Slax are
 recognized but remain
 download-disabled until their mirror, signature-chain or archive-extraction requirements
 can be represented safely. A variant without an exact official mapping remains visibly

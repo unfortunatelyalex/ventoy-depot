@@ -144,6 +144,9 @@ from ventoy_depot.providers.builtin import BUILTIN_PROVIDERS
         ("Fatdog64-904.iso", "fatdog64", "live", "x86_64"),
         ("slax-64bit-15.0.1.iso", "slax", "debian", "x86_64"),
         ("slax-32bit-slackware-15.0.4.iso", "slax", "slackware", "i386"),
+        ("openmediavault_8.3.1-amd64.iso", "openmediavault", "installer", "amd64"),
+        ("archcraft-2026.08.01-x86_64.iso", "archcraft", "main", "x86_64"),
+        ("rescatux-0.74.iso", "rescatux", "repair", "multiarch"),
         ("alpine-standard-3.24.1-x86_64.iso", "alpine", "standard", "x86_64"),
         (
             "chimera-linux-riscv64-LIVE-20251220-plasma.iso",

@@ -95,6 +95,8 @@ BUILTIN_RESOLVER_IDS = frozenset(
         "archbang",
         "puppy-linux",
         "bodhi-linux",
+        "openmediavault",
+        "archcraft",
     }
 )
 
@@ -185,6 +187,8 @@ def resolve_release(provider_id: str, identity: IsoIdentity) -> ReleaseArtifact:
         "archbang": _archbang,
         "puppy-linux": _puppy_linux,
         "bodhi-linux": _bodhi_linux,
+        "openmediavault": _openmediavault,
+        "archcraft": _archcraft,
     }
     try:
         resolver = resolvers[provider_id]
@@ -3426,4 +3430,99 @@ def _bodhi_linux(identity: IsoIdentity) -> ReleaseArtifact:
         "sha256",
         checksum,
         hosts,
+    )
+
+
+def _openmediavault(identity: IsoIdentity) -> ReleaseArtifact:
+    if identity.product_id != "openmediavault" or identity.edition != "installer":
+        raise ProviderError("This openmediavault edition is not supported automatically.")
+    if identity.architecture != "amd64" or identity.channel not in {"stable", "oldstable"}:
+        raise ProviderError("This openmediavault architecture or channel is not supported.")
+    hosts = {
+        "www.openmediavault.org",
+        "sourceforge.net",
+        "downloads.sourceforge.net",
+        "netix.dl.sourceforge.net",
+    }
+    client = SafeHttpClient(frozenset(hosts))
+    page = _text(client, "https://www.openmediavault.org/download.html")
+    releases = re.finditer(
+        r'href="https://sourceforge\.net/projects/openmediavault/files/iso/'
+        r"(?P<version>\d+(?:\.\d+)+)/"
+        r'(?P<filename>openmediavault_(?P=version)-amd64\.iso)"[^>]*>'
+        r".*?\b(?P<channel>Oldstable|Stable)\b"
+        r".*?SHA256:.{0,100}<code>(?P<checksum>[a-fA-F0-9]{64})</code>",
+        page,
+        re.DOTALL,
+    )
+    selected = next(
+        (match for match in releases if match.group("channel").lower() == identity.channel),
+        None,
+    )
+    if selected is None:
+        raise ProviderError("The official openmediavault page lacks this release channel.")
+    version = selected.group("version")
+    filename = selected.group("filename")
+    source = f"https://sourceforge.net/projects/openmediavault/files/iso/{version}/{filename}"
+    return _artifact(
+        identity,
+        version,
+        filename,
+        source + "/download?use_mirror=netix",
+        "sha256",
+        selected.group("checksum").lower(),
+        hosts,
+    )
+
+
+def _archcraft(identity: IsoIdentity) -> ReleaseArtifact:
+    if identity.product_id != "archcraft" or identity.edition != "main":
+        raise ProviderError("This Archcraft edition is not supported automatically.")
+    if identity.architecture != "x86_64" or identity.channel != "rolling":
+        raise ProviderError("Archcraft automatic updates support the rolling x86_64 ISO only.")
+    hosts = {
+        "archcraft.io",
+        "sourceforge.net",
+        "downloads.sourceforge.net",
+        "netix.dl.sourceforge.net",
+    }
+    client = SafeHttpClient(frozenset(hosts))
+    payload = json.loads(
+        _text(client, "https://sourceforge.net/projects/archcraft/best_release.json")
+    )
+    release = payload.get("release")
+    if not isinstance(release, dict):
+        raise ProviderError("The official Archcraft project metadata has no release.")
+    release_path = str(release.get("filename", ""))
+    match = re.fullmatch(
+        r"/(?P<directory>v(?P<year>\d{2})\.(?P<month>\d{2}))/"
+        r"(?P<filename>archcraft-20(?P=year)\.(?P=month)\."
+        r"(?P<day>\d{2})-x86_64\.iso)",
+        release_path,
+        re.I,
+    )
+    if match is None:
+        raise ProviderError("The official Archcraft metadata has an unexpected release path.")
+    filename = match.group("filename")
+    version = f"20{match.group('year')}.{match.group('month')}.{match.group('day')}"
+    source = (
+        f"https://sourceforge.net/projects/archcraft/files/{match.group('directory')}/{filename}"
+    )
+    mirror = "?use_mirror=netix"
+    checksum = _checksum(
+        _text(client, source + ".sha256sum/download" + mirror),
+        filename,
+        "sha256",
+    )
+    size = release.get("bytes")
+    size_bytes = size if isinstance(size, int) and size >= 0 else None
+    return _artifact(
+        identity,
+        version,
+        filename,
+        source + "/download" + mirror,
+        "sha256",
+        checksum,
+        hosts,
+        size_bytes=size_bytes,
     )
