@@ -319,6 +319,8 @@ _ASSIGNMENT_PROFILES = (
     ("Bodhi Linux Legacy", "bodhi-linux", "bodhi-linux", "i386"),
     ("openmediavault", "openmediavault", "openmediavault", "amd64"),
     ("Archcraft", "archcraft", "archcraft", "x86_64"),
+    ("Rhino Linux", "rhino-linux", "rhino-linux", "amd64"),
+    ("Rhino Linux ARM64", "rhino-linux", "rhino-linux", "arm64"),
     ("Omarchy", "omarchy", "omarchy", "x86_64"),
     ("Manjaro", "manjaro", "manjaro", "x86_64"),
     ("Pop!_OS", "pop-os", "pop-os", "amd64"),

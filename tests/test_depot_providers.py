@@ -147,6 +147,8 @@ from ventoy_depot.providers.builtin import BUILTIN_PROVIDERS
         ("openmediavault_8.3.1-amd64.iso", "openmediavault", "installer", "amd64"),
         ("archcraft-2026.08.01-x86_64.iso", "archcraft", "main", "x86_64"),
         ("rescatux-0.74.iso", "rescatux", "repair", "multiarch"),
+        ("Rhino-Linux-2026.1-amd64.iso", "rhino-linux", "unicorn", "amd64"),
+        ("Rhino-Linux-2026.1-arm64-lomiri.iso", "rhino-linux", "lomiri", "arm64"),
         ("alpine-standard-3.24.1-x86_64.iso", "alpine", "standard", "x86_64"),
         (
             "chimera-linux-riscv64-LIVE-20251220-plasma.iso",

@@ -97,6 +97,7 @@ BUILTIN_RESOLVER_IDS = frozenset(
         "bodhi-linux",
         "openmediavault",
         "archcraft",
+        "rhino-linux",
     }
 )
 
@@ -189,6 +190,7 @@ def resolve_release(provider_id: str, identity: IsoIdentity) -> ReleaseArtifact:
         "bodhi-linux": _bodhi_linux,
         "openmediavault": _openmediavault,
         "archcraft": _archcraft,
+        "rhino-linux": _rhino_linux,
     }
     try:
         resolver = resolvers[provider_id]
@@ -3526,3 +3528,48 @@ def _archcraft(identity: IsoIdentity) -> ReleaseArtifact:
         hosts,
         size_bytes=size_bytes,
     )
+
+
+def _rhino_linux(identity: IsoIdentity) -> ReleaseArtifact:
+    if identity.product_id != "rhino-linux" or identity.edition not in {"unicorn", "lomiri"}:
+        raise ProviderError("This Rhino Linux edition is not supported automatically.")
+    if identity.architecture not in {"amd64", "arm64"} or identity.channel != "rolling":
+        raise ProviderError("This Rhino Linux architecture or channel is not supported.")
+    hosts = {
+        "rhinolinux.org",
+        "sourceforge.net",
+        "downloads.sourceforge.net",
+        "netix.dl.sourceforge.net",
+    }
+    client = SafeHttpClient(frozenset(hosts))
+    page = _text(client, "https://rhinolinux.org/download")
+    script_match = re.search(
+        r'src="(?P<path>/_next/static/chunks/pages/download-[a-f0-9]+\.js)"',
+        page,
+        re.I,
+    )
+    if script_match is None:
+        raise ProviderError("The official Rhino Linux page lacks its release metadata script.")
+    script = _text(client, "https://rhinolinux.org" + script_match.group("path"))
+    releases = re.finditer(
+        r'downloadMirror:"(?P<url>https://sourceforge\.net/projects/'
+        r"rhino-linux-builder/files/[^\"]+/"
+        r"(?P<filename>Rhino-Linux-(?P<version>\d+(?:\.\d+)+)-"
+        r"(?P<architecture>amd64|arm64)(?P<lomiri>-lomiri)?\.iso)/download)\""
+        r'[^}]{0,1000}?shasum:"(?P<checksum>[a-fA-F0-9]{64})"',
+        script,
+    )
+    for release in releases:
+        edition = "lomiri" if release.group("lomiri") else "unicorn"
+        if edition != identity.edition or release.group("architecture") != identity.architecture:
+            continue
+        return _artifact(
+            identity,
+            release.group("version"),
+            release.group("filename"),
+            release.group("url") + "?use_mirror=netix",
+            "sha256",
+            release.group("checksum").lower(),
+            hosts,
+        )
+    raise ProviderError("The official Rhino Linux metadata lacks this ISO variant.")

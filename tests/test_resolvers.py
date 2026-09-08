@@ -3283,3 +3283,56 @@ def test_archcraft_resolver_uses_release_path_and_sha256_sidecar(monkeypatch) ->
     assert artifact.download_url.endswith(f"/v26.08/{filename}/download?use_mirror=netix")
     assert artifact.identity is not None
     assert artifact.identity.variant_key() == installed.variant_key()
+
+
+@pytest.mark.parametrize(
+    ("edition", "architecture", "filename", "digest"),
+    [
+        ("unicorn", "amd64", "Rhino-Linux-2026.1-amd64.iso", "1" * 64),
+        ("lomiri", "arm64", "Rhino-Linux-2026.1-arm64-lomiri.iso", "4" * 64),
+    ],
+)
+def test_rhino_linux_resolver_reads_dynamic_official_variant_metadata(
+    monkeypatch, edition: str, architecture: str, filename: str, digest: str
+) -> None:
+    script_path = "/_next/static/chunks/pages/download-abcdef1234.js"
+    script = (
+        'downloadMirror:"https://sourceforge.net/projects/rhino-linux-builder/files/'
+        '2026.1/Rhino-Linux-2026.1-amd64.iso/download",downloadSize:"2.70 GiB",'
+        f'shasum:"{"1" * 64}"}},'
+        'downloadMirror:"https://sourceforge.net/projects/rhino-linux-builder/files/'
+        '2026.1/Rhino-Linux-2026.1-arm64-lomiri.iso/download",downloadSize:"2.58 GiB",'
+        f'shasum:"{"4" * 64}"}}'
+    )
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, requested: str) -> bytes:
+            if requested == "https://rhinolinux.org/download":
+                return f'<script src="{script_path}"></script>'.encode()
+            assert requested == "https://rhinolinux.org" + script_path
+            return script.encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "rhino-linux",
+        "rhino-linux",
+        edition,
+        None,
+        "rolling",
+        architecture,
+        None,
+        "2025.4",
+        None,
+    )
+
+    artifact = resolvers.resolve_release("rhino-linux", installed)
+
+    assert artifact.version == "2026.1"
+    assert artifact.filename == filename
+    assert artifact.checksum == digest
+    assert artifact.download_url.endswith(f"/{filename}/download?use_mirror=netix")
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()

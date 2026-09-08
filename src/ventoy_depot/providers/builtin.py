@@ -2568,4 +2568,21 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
         ),
         ProviderCapabilities(("repair",), ("multiarch",), (), ("stable",)),
     ),
+    FilenameProvider(
+        "rhino-linux",
+        "Rhino Linux",
+        (
+            FilenameRule(
+                re.compile(
+                    r"Rhino-Linux-(?P<version>\d+(?:\.\d+)+)-"
+                    r"(?P<architecture>amd64|arm64)(?:-(?P<edition>lomiri))?\.iso$",
+                    re.I,
+                ),
+                "rhino-linux",
+                default_edition="unicorn",
+                default_channel="rolling",
+            ),
+        ),
+        ProviderCapabilities(("unicorn", "lomiri"), ("amd64", "arm64"), (), ("rolling",)),
+    ),
 )
