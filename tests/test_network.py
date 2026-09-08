@@ -66,3 +66,20 @@ def test_configured_proxy_is_used_only_for_https_requests(monkeypatch) -> None:
 
     proxy = next(item for item in captured if isinstance(item, urllib.request.ProxyHandler))
     assert proxy.proxies == {"https": "http://proxy.example:8080"}
+
+
+def test_metadata_retries_a_transient_read_timeout(monkeypatch) -> None:
+    class TimeoutResponse(FakeResponse):
+        def read(self, amount: int = -1) -> bytes:
+            raise TimeoutError("read timed out")
+
+    first = TimeoutResponse("4")
+    second = FakeResponse("4", b"data")
+    responses = iter((first, second))
+    monkeypatch.setattr(SafeHttpClient, "open", lambda self, url: next(responses))
+
+    result = SafeHttpClient(frozenset({"example.test"})).metadata("https://example.test/data")
+
+    assert result == b"data"
+    assert first.closed
+    assert second.closed

@@ -1578,21 +1578,31 @@ def _manjaro(identity: IsoIdentity) -> ReleaseArtifact:
         raise ProviderError("Manjaro review/preview updates require an explicit channel mapping.")
     if identity.flavor not in {"full", "minimal"}:
         raise ProviderError("Manjaro updates require an explicit full or minimal image flavor.")
-    hosts = {"download.manjaro.org", "gitlab.manjaro.org"}
+    hosts = {"download.manjaro.org", "gitlab.manjaro.org", "manjaro.org"}
     client = SafeHttpClient(frozenset(hosts))
-    metadata_url = "https://gitlab.manjaro.org/webpage/iso-info/-/raw/master/file-info.json"
-    payload = json.loads(_text(client, metadata_url))
-    edition_key = "plasma" if identity.edition == "kde" else identity.edition
-    try:
-        variant = payload["official"][edition_key]
-        if identity.flavor == "minimal":
-            variant = variant["minimal"]
-        url = str(variant["image"])
-        sums_url = str(variant["checksum"])
-    except (KeyError, TypeError) as error:
-        raise ProviderError(
-            "The Manjaro metadata contains no matching full/minimal ISO."
-        ) from error
+    if identity.flavor == "full":
+        page = _text(client, "https://manjaro.org/products/download/x86")
+        urls = re.findall(
+            rf"https://download\.manjaro\.org/{re.escape(identity.edition)}/"
+            rf"\d+(?:\.\d+)+/manjaro-{re.escape(identity.edition)}-"
+            r"\d+(?:\.\d+)+-\d{6}-linux\d+\.iso",
+            page,
+            re.I,
+        )
+        if not urls:
+            raise ProviderError("The official Manjaro page lacks this full ISO edition.")
+        url = max(urls, key=_version_key)
+        sums_url = url + ".sha256"
+    else:
+        metadata_url = "https://gitlab.manjaro.org/webpage/iso-info/-/raw/master/file-info.json"
+        payload = json.loads(_text(client, metadata_url))
+        edition_key = "plasma" if identity.edition == "kde" else identity.edition
+        try:
+            variant = payload["official"][edition_key]["minimal"]
+            url = str(variant["image"])
+            sums_url = str(variant["checksum"])
+        except (KeyError, TypeError) as error:
+            raise ProviderError("The Manjaro metadata contains no matching minimal ISO.") from error
     filename = url.rsplit("/", 1)[-1]
     expected = re.fullmatch(
         rf"manjaro-{re.escape(identity.edition)}-(?P<version>\d+(?:\.\d+)+)"

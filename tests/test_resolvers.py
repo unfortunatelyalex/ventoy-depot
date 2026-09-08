@@ -465,7 +465,11 @@ def test_manjaro_resolver_uses_official_variant_metadata(monkeypatch, flavor: st
             pass
 
         def metadata(self, requested: str) -> bytes:
+            if requested == "https://manjaro.org/products/download/x86":
+                assert flavor == "full"
+                return f'<a href="{url}">{filename}</a>'.encode()
             if requested.startswith("https://gitlab.manjaro.org/"):
+                assert flavor == "minimal"
                 return json.dumps(payload).encode()
             assert requested == url + ".sha256"
             return f"{digest}  {filename}\n".encode()
