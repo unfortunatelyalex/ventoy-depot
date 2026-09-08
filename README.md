@@ -67,7 +67,8 @@ Pop!_OS, Porteus, PorteuX, Mageia,
 Proxmox, XCP-ng, Rescuezilla, Rhino Linux, MidnightBSD, Solus, TrueNAS Community Edition, TUXEDO OS, Void Linux, Vanilla OS and the free Zorin OS
 editions and Tails. IPFire, pfSense Community Edition, Redo Rescue, Ultimate Boot CD,
 Windows 10/11, Windows Server Evaluation, Qubes OS, BlackArch, Boot-Repair-Disk,
-DragonFly BSD, Dr.Web LiveDisk, Fatdog64, Peppermint OS, Q4OS, Rescatux and Slax are
+Archboot, DragonFly BSD, Dr.Web LiveDisk, KNOPPIX, Mabox Linux, Fatdog64,
+Peppermint OS, Q4OS, Rescatux and Slax are
 recognized but remain
 download-disabled until their mirror, signature-chain or archive-extraction requirements
 can be represented safely. A variant without an exact official mapping remains visibly

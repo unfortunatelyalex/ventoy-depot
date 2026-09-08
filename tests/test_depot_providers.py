@@ -153,6 +153,19 @@ from ventoy_depot.providers.builtin import BUILTIN_PROVIDERS
         ("drweb-livedisk-900-cd.iso", "drweb-livedisk", "rescue", "x86_64"),
         ("MidnightBSD-4.0.7--amd64-disc1.iso", "midnightbsd", "disc1", "amd64"),
         ("dfly-x86_64-6.4.2_REL.iso", "dragonflybsd", "installer", "x86_64"),
+        (
+            "archboot-2026.09.07-01.02-7.2.3-arch1-3-latest-x86_64.iso",
+            "archboot",
+            "rescue-installer",
+            "x86_64",
+        ),
+        ("KNOPPIX_V9.1DVD-2021-01-25-EN.iso", "knoppix", "dvd", "multiarch"),
+        (
+            "mabox-linux-26.09-Istredd-260904-linux618.iso",
+            "mabox-linux",
+            "desktop",
+            "x86_64",
+        ),
         ("alpine-standard-3.24.1-x86_64.iso", "alpine", "standard", "x86_64"),
         (
             "chimera-linux-riscv64-LIVE-20251220-plasma.iso",
@@ -335,6 +348,11 @@ def test_dragonflybsd_is_detection_only_without_strong_publisher_checksum() -> N
 
     assert detected is not None
     assert provider.supports_automatic_download is False
+
+
+@pytest.mark.parametrize("provider_id", ["archboot", "knoppix", "mabox-linux"])
+def test_additional_media_without_sha2_are_detection_only(provider_id: str) -> None:
+    assert provider_map()[provider_id].supports_automatic_download is False
 
 
 def test_unknown_filename_is_not_guessed() -> None:

@@ -2662,4 +2662,74 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
         ),
         ProviderCapabilities(("installer",), ("x86_64",), (), ("release", "candidate")),
     ),
+    FilenameProvider(
+        "archboot",
+        "Archboot",
+        (
+            FilenameRule(
+                re.compile(
+                    r"archboot-(?P<version>\d{4}\.\d{2}\.\d{2})-"
+                    r"(?P<build>\d{2}\.\d{2})-\d+(?:\.\d+)+-arch\d+-\d+"
+                    r"(?:-(?P<flavor>latest|local))?-(?P<architecture>x86_64)\.iso$",
+                    re.I,
+                ),
+                "archboot",
+                default_edition="rescue-installer",
+                default_flavor="standard",
+                default_channel="rolling",
+            ),
+        ),
+        ProviderCapabilities(
+            ("rescue-installer",),
+            ("x86_64",),
+            (),
+            ("rolling",),
+            ("standard", "latest", "local"),
+        ),
+    ),
+    FilenameProvider(
+        "knoppix",
+        "KNOPPIX",
+        (
+            FilenameRule(
+                re.compile(
+                    r"KNOPPIX_V(?P<version>\d+(?:\.\d+)+)DVD-\d{4}-\d{2}-\d{2}-"
+                    r"(?P<language>DE|EN)\.iso$",
+                    re.I,
+                ),
+                "knoppix",
+                default_edition="dvd",
+                default_architecture="multiarch",
+            ),
+            FilenameRule(
+                re.compile(
+                    r"KNOPPIX_V(?P<version>\d+(?:\.\d+)+)-\d{4}-\d{2}-\d{2}-"
+                    r"(?P<language>DE|EN)\.iso$",
+                    re.I,
+                ),
+                "knoppix",
+                default_edition="cd",
+                default_architecture="multiarch",
+            ),
+        ),
+        ProviderCapabilities(("dvd", "cd"), ("multiarch",), ("de", "en"), ("stable",)),
+    ),
+    FilenameProvider(
+        "mabox-linux",
+        "Mabox Linux",
+        (
+            FilenameRule(
+                re.compile(
+                    r"mabox-linux-(?P<version>\d+(?:\.\d+)+)-[A-Za-z0-9._+-]+-"
+                    r"(?P<build>\d{6})-linux\d+\.iso$",
+                    re.I,
+                ),
+                "mabox-linux",
+                default_edition="desktop",
+                default_channel="rolling",
+                default_architecture="x86_64",
+            ),
+        ),
+        ProviderCapabilities(("desktop",), ("x86_64",), (), ("rolling",)),
+    ),
 )
