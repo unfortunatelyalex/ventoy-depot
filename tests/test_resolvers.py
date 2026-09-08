@@ -3373,3 +3373,45 @@ def test_porteus_resolver_preserves_stable_desktop_edition(monkeypatch, edition:
     assert artifact.download_url == base + filename
     assert artifact.identity is not None
     assert artifact.identity.variant_key() == installed.variant_key()
+
+
+@pytest.mark.parametrize(("edition", "architecture"), [("disc1", "amd64"), ("bootonly", "i386")])
+def test_midnightbsd_resolver_preserves_medium_and_architecture(
+    monkeypatch, edition: str, architecture: str
+) -> None:
+    filename = f"MidnightBSD-4.0.7--{architecture}-{edition}.iso"
+    digest = "9" * 128
+    base = f"https://discovery.midnightbsd.org/ftp/releases/{architecture}/ISO-IMAGES/4.0.7/"
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, requested: str) -> bytes:
+            if requested == "https://www.midnightbsd.org/download/":
+                return f"MidnightBSD-4.0.7--{architecture}-disc1.iso".encode()
+            assert requested == base + "CHECKSUM.SHA512"
+            return f"SHA512 ({filename}) = {digest}\n".encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "midnightbsd",
+        "midnightbsd",
+        edition,
+        None,
+        "release",
+        architecture,
+        None,
+        "4.0.6",
+        None,
+    )
+
+    artifact = resolvers.resolve_release("midnightbsd", installed)
+
+    assert artifact.version == "4.0.7"
+    assert artifact.filename == filename
+    assert artifact.checksum_algorithm == "sha512"
+    assert artifact.checksum == digest
+    assert artifact.download_url == base + filename
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()

@@ -2620,4 +2620,46 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
         ),
         ProviderCapabilities(("rescue",), ("x86_64",), (), ("stable",)),
     ),
+    FilenameProvider(
+        "midnightbsd",
+        "MidnightBSD",
+        (
+            FilenameRule(
+                re.compile(
+                    r"MidnightBSD-(?P<version>\d+(?:\.\d+)+)--"
+                    r"(?P<architecture>amd64|i386)-(?P<edition>disc1|bootonly)\.iso$",
+                    re.I,
+                ),
+                "midnightbsd",
+                default_channel="release",
+            ),
+        ),
+        ProviderCapabilities(("disc1", "bootonly"), ("amd64", "i386"), (), ("release",)),
+    ),
+    FilenameProvider(
+        "dragonflybsd",
+        "DragonFly BSD",
+        (
+            FilenameRule(
+                re.compile(
+                    r"dfly-(?P<architecture>x86_64)-(?P<version>\d+(?:\.\d+)+)_REL\.iso$",
+                    re.I,
+                ),
+                "dragonflybsd",
+                default_edition="installer",
+                default_channel="release",
+            ),
+            FilenameRule(
+                re.compile(
+                    r"dfly-(?P<architecture>x86_64)-(?P<version>\d+(?:\.\d+)+)_"
+                    r"(?P<build>RC\d+)\.iso$",
+                    re.I,
+                ),
+                "dragonflybsd",
+                default_edition="installer",
+                default_channel="candidate",
+            ),
+        ),
+        ProviderCapabilities(("installer",), ("x86_64",), (), ("release", "candidate")),
+    ),
 )

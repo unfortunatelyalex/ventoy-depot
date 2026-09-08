@@ -151,6 +151,8 @@ from ventoy_depot.providers.builtin import BUILTIN_PROVIDERS
         ("Rhino-Linux-2026.1-arm64-lomiri.iso", "rhino-linux", "lomiri", "arm64"),
         ("Porteus-XFCE-v5.01-x86_64.iso", "porteus", "xfce", "x86_64"),
         ("drweb-livedisk-900-cd.iso", "drweb-livedisk", "rescue", "x86_64"),
+        ("MidnightBSD-4.0.7--amd64-disc1.iso", "midnightbsd", "disc1", "amd64"),
+        ("dfly-x86_64-6.4.2_REL.iso", "dragonflybsd", "installer", "x86_64"),
         ("alpine-standard-3.24.1-x86_64.iso", "alpine", "standard", "x86_64"),
         (
             "chimera-linux-riscv64-LIVE-20251220-plasma.iso",
@@ -321,6 +323,15 @@ def test_drweb_livedisk_is_detection_only_without_strong_publisher_checksum() ->
     provider = provider_map()["drweb-livedisk"]
 
     detected = provider.detect(Path("drweb-livedisk-900-cd.iso"))
+
+    assert detected is not None
+    assert provider.supports_automatic_download is False
+
+
+def test_dragonflybsd_is_detection_only_without_strong_publisher_checksum() -> None:
+    provider = provider_map()["dragonflybsd"]
+
+    detected = provider.detect(Path("dfly-x86_64-6.4.2_REL.iso"))
 
     assert detected is not None
     assert provider.supports_automatic_download is False

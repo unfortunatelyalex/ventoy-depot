@@ -62,6 +62,7 @@ BUILTIN_RESOLVER_IDS = frozenset(
         "xcp-ng",
         "porteux",
         "porteus",
+        "midnightbsd",
         "ghostbsd",
         "haiku",
         "harvester",
@@ -156,6 +157,7 @@ def resolve_release(provider_id: str, identity: IsoIdentity) -> ReleaseArtifact:
         "xcp-ng": _xcp_ng,
         "porteux": _porteux,
         "porteus": _porteus,
+        "midnightbsd": _midnightbsd,
         "ghostbsd": _ghostbsd,
         "haiku": _haiku,
         "harvester": _harvester,
@@ -3613,5 +3615,38 @@ def _porteus(identity: IsoIdentity) -> ReleaseArtifact:
         base + filename,
         "sha256",
         _checksum(sums, filename, "sha256"),
+        hosts,
+    )
+
+
+def _midnightbsd(identity: IsoIdentity) -> ReleaseArtifact:
+    if identity.product_id != "midnightbsd" or identity.edition not in {"disc1", "bootonly"}:
+        raise ProviderError("This MidnightBSD installation medium is not supported.")
+    if identity.architecture not in {"amd64", "i386"} or identity.channel != "release":
+        raise ProviderError("This MidnightBSD architecture or release channel is unsupported.")
+    hosts = {"www.midnightbsd.org", "discovery.midnightbsd.org"}
+    client = SafeHttpClient(frozenset(hosts))
+    page = _text(client, "https://www.midnightbsd.org/download/")
+    versions = re.findall(
+        rf"MidnightBSD-(\d+(?:\.\d+)+)--{re.escape(identity.architecture)}-disc1\.iso",
+        page,
+        re.I,
+    )
+    if not versions:
+        raise ProviderError("The official MidnightBSD page lacks this architecture.")
+    version = max(versions, key=_version_key)
+    filename = f"MidnightBSD-{version}--{identity.architecture}-{identity.edition}.iso"
+    base = (
+        f"https://discovery.midnightbsd.org/ftp/releases/{identity.architecture}/"
+        f"ISO-IMAGES/{version}/"
+    )
+    sums = _text(client, base + "CHECKSUM.SHA512")
+    return _artifact(
+        identity,
+        version,
+        filename,
+        base + filename,
+        "sha512",
+        _checksum(sums, filename, "sha512"),
         hosts,
     )
