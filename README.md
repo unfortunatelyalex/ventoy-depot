@@ -64,7 +64,7 @@ deepin, DRIFT Linux, FreeDOS, Garuda Linux, Harvester HCI, Hiren's BootCD PE, Ka
 netboot.xyz, NixOS, SystemRescue, Super Grub2 Disk, ALT Rescue, Finnix, UrBackup Restore Stick,
 OpenBSD, openSUSE Leap, openSUSE Tumbleweed, FreeBSD, OpenIndiana Hipster, OmniOS, Omarchy, openmediavault, Parrot OS,
 Pop!_OS, Porteus, PorteuX, Mageia,
-Proxmox, XCP-ng, Rescuezilla, Rhino Linux, Calculate Linux, MidnightBSD, Solus, TrueNAS Community Edition, TUXEDO OS, Void Linux, Vanilla OS and the free Zorin OS
+Proxmox, XCP-ng, Rescuezilla, Rhino Linux, Calculate Linux, openEuler, MidnightBSD, Solus, TrueNAS Community Edition, TUXEDO OS, Void Linux, Vanilla OS and the free Zorin OS
 editions and Tails. IPFire, pfSense Community Edition, Redo Rescue, Ultimate Boot CD,
 Windows 10/11, Windows Server Evaluation, Qubes OS, BlackArch, Boot-Repair-Disk,
 Archboot, DragonFly BSD, Dr.Web LiveDisk, KNOPPIX, Mabox Linux, Fatdog64,

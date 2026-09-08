@@ -2819,4 +2819,38 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
             ("rolling",),
         ),
     ),
+    FilenameProvider(
+        "openeuler",
+        "openEuler",
+        (
+            FilenameRule(
+                re.compile(
+                    r"openEuler-(?P<version>\d{2}\.03-LTS(?:-SP\d+)?)-"
+                    r"(?:(?P<edition>netinst|everything)-)?"
+                    r"(?P<architecture>x86_64|aarch64|riscv64|loongarch64)-dvd\.iso$",
+                    re.I,
+                ),
+                "openeuler",
+                default_edition="dvd",
+                default_channel="lts",
+            ),
+            FilenameRule(
+                re.compile(
+                    r"openEuler-(?P<version>\d{2}\.(?:03|09))-"
+                    r"(?:(?P<edition>netinst|everything)-)?"
+                    r"(?P<architecture>x86_64|aarch64|riscv64|loongarch64)-dvd\.iso$",
+                    re.I,
+                ),
+                "openeuler",
+                default_edition="dvd",
+                default_channel="interim",
+            ),
+        ),
+        ProviderCapabilities(
+            ("dvd", "netinst", "everything"),
+            ("x86_64", "aarch64", "riscv64", "loongarch64"),
+            (),
+            ("lts", "interim"),
+        ),
+    ),
 )

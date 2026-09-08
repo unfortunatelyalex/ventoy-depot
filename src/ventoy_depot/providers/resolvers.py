@@ -158,6 +158,7 @@ BUILTIN_RESOLVER_IDS = frozenset(
         "archcraft",
         "rhino-linux",
         "calculate-linux",
+        "openeuler",
     }
 )
 
@@ -254,6 +255,7 @@ def resolve_release(provider_id: str, identity: IsoIdentity) -> ReleaseArtifact:
         "archcraft": _archcraft,
         "rhino-linux": _rhino_linux,
         "calculate-linux": _calculate_linux,
+        "openeuler": _openeuler,
     }
     try:
         resolver = resolvers[provider_id]
@@ -3725,6 +3727,51 @@ def _calculate_linux(identity: IsoIdentity) -> ReleaseArtifact:
         base + filename,
         "sha512",
         _checksum(sums, filename, "sha512"),
+        {host},
+    )
+
+
+def _openeuler(identity: IsoIdentity) -> ReleaseArtifact:
+    if (
+        identity.product_id != "openeuler"
+        or identity.edition not in {"dvd", "netinst", "everything"}
+        or identity.channel not in {"lts", "interim"}
+        or identity.architecture not in {"x86_64", "aarch64", "riscv64", "loongarch64"}
+        or identity.flavor is not None
+    ):
+        raise ProviderError("This openEuler image variant is unsupported.")
+    host = "repo.openeuler.org"
+    root = f"https://{host}/"
+    client = SafeHttpClient(frozenset({host}))
+    directory_names = re.findall(
+        r'href=["\'](?P<release>openEuler-(?P<year>\d{2})\.(?P<month>03|09)'
+        r'(?:-LTS(?:-SP(?P<service_pack>\d+))?)?)/["\']',
+        _text(client, root),
+        re.IGNORECASE,
+    )
+    candidates = [
+        (release, int(year), int(month), int(service_pack or 0))
+        for release, year, month, service_pack in directory_names
+        if (identity.channel == "lts") == ("-LTS" in release.upper())
+    ]
+    if not candidates:
+        raise ProviderError("The official openEuler repository contains no matching release.")
+    release = max(candidates, key=lambda item: item[1:])[0]
+    prefix = "" if identity.edition == "dvd" else f"{identity.edition}-"
+    filename = f"{release}-{prefix}{identity.architecture}-dvd.iso"
+    base = f"{root}{release}/ISO/{identity.architecture}/"
+    listing = _text(client, base)
+    if not re.search(rf'href=["\']{re.escape(filename)}["\']', listing, re.IGNORECASE):
+        raise ProviderError("The selected openEuler release does not publish this ISO variant.")
+    sidecar = _text(client, base + filename + ".sha256sum")
+    version = release.removeprefix("openEuler-")
+    return _artifact(
+        identity,
+        version,
+        filename,
+        base + filename,
+        "sha256",
+        _checksum(sidecar, filename, "sha256"),
         {host},
     )
 

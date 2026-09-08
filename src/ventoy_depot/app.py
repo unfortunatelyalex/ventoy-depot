@@ -324,6 +324,7 @@ _ASSIGNMENT_PROFILES = (
     ("Porteus", "porteus", "porteus", "x86_64"),
     ("MidnightBSD", "midnightbsd", "midnightbsd", "amd64"),
     ("Calculate Linux", "calculate-linux", "calculate-linux", "x86_64"),
+    ("openEuler", "openeuler", "openeuler", "x86_64"),
     ("Omarchy", "omarchy", "omarchy", "x86_64"),
     ("Manjaro", "manjaro", "manjaro", "x86_64"),
     ("Pop!_OS", "pop-os", "pop-os", "amd64"),

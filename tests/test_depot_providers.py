@@ -167,6 +167,19 @@ from ventoy_depot.providers.builtin import BUILTIN_PROVIDERS
             "x86_64",
         ),
         ("cld-20260907-x86_64.iso", "calculate-linux", "cld", "x86_64"),
+        ("openEuler-24.03-LTS-SP4-x86_64-dvd.iso", "openeuler", "dvd", "x86_64"),
+        (
+            "openEuler-24.03-LTS-SP4-netinst-aarch64-dvd.iso",
+            "openeuler",
+            "netinst",
+            "aarch64",
+        ),
+        (
+            "openEuler-25.09-everything-riscv64-dvd.iso",
+            "openeuler",
+            "everything",
+            "riscv64",
+        ),
         ("alpine-standard-3.24.1-x86_64.iso", "alpine", "standard", "x86_64"),
         (
             "chimera-linux-riscv64-LIVE-20251220-plasma.iso",

@@ -3474,3 +3474,60 @@ def test_calculate_linux_resolver_preserves_profile(monkeypatch, edition: str) -
     assert artifact.checksum == digest
     assert artifact.identity is not None
     assert artifact.identity.variant_key() == installed.variant_key()
+
+
+@pytest.mark.parametrize(
+    ("channel", "edition", "architecture", "release"),
+    [
+        ("lts", "dvd", "x86_64", "openEuler-24.03-LTS-SP4"),
+        ("lts", "netinst", "aarch64", "openEuler-24.03-LTS-SP4"),
+        ("interim", "everything", "riscv64", "openEuler-25.09"),
+    ],
+)
+def test_openeuler_resolver_preserves_channel_medium_and_architecture(
+    monkeypatch, channel: str, edition: str, architecture: str, release: str
+) -> None:
+    prefix = "" if edition == "dvd" else f"{edition}-"
+    filename = f"{release}-{prefix}{architecture}-dvd.iso"
+    digest = "d" * 64
+    root = "https://repo.openeuler.org/"
+    base = f"{root}{release}/ISO/{architecture}/"
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, requested: str) -> bytes:
+            if requested == root:
+                return (
+                    b'<a href="openEuler-24.03-LTS-SP3/">old LTS</a>'
+                    b'<a href="openEuler-24.03-LTS-SP4/">new LTS</a>'
+                    b'<a href="openEuler-25.03/">old interim</a>'
+                    b'<a href="openEuler-25.09/">new interim</a>'
+                )
+            if requested == base:
+                return f'<a href="{filename}">{filename}</a>'.encode()
+            assert requested == base + filename + ".sha256sum"
+            return f"{digest}  {filename}\n".encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "openeuler",
+        "openeuler",
+        edition,
+        None,
+        channel,
+        architecture,
+        None,
+        "old",
+        None,
+    )
+
+    artifact = resolvers.resolve_release("openeuler", installed)
+
+    assert artifact.version == release.removeprefix("openEuler-")
+    assert artifact.filename == filename
+    assert artifact.download_url == base + filename
+    assert artifact.checksum == digest
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()
