@@ -9,6 +9,63 @@ from ..models import IsoIdentity, ReleaseArtifact
 from ..network import SafeHttpClient
 from .base import ProviderError
 
+_NETBSD_ARCHITECTURES = frozenset(
+    {
+        "acorn32",
+        "alpha",
+        "amd64",
+        "amiga",
+        "arc",
+        "atari",
+        "cats",
+        "cobalt",
+        "dreamcast",
+        "emips",
+        "evbarm-aarch64",
+        "evbarm-aarch64eb",
+        "evbmips-mips64eb",
+        "evbmips-mips64el",
+        "evbmips-mipseb",
+        "evbmips-mipsel",
+        "evbmips-mipsn64eb",
+        "evbmips-mipsn64el",
+        "evbppc",
+        "evbsh3-sh3eb",
+        "evbsh3-sh3el",
+        "ews4800mips",
+        "hp300",
+        "hpcarm",
+        "hpcmips",
+        "hpcsh",
+        "hppa",
+        "i386",
+        "ia64",
+        "ibmnws",
+        "luna68k",
+        "mac68k",
+        "macppc",
+        "mipsco",
+        "mvme68k",
+        "mvmeppc",
+        "news68k",
+        "newsmips",
+        "next68k",
+        "ofppc",
+        "pmax",
+        "prep",
+        "sandpoint",
+        "sgimips",
+        "shark",
+        "sparc",
+        "sparc64",
+        "sun2",
+        "sun3",
+        "vax",
+        "x68k",
+        "zaurus",
+    }
+)
+
 BUILTIN_RESOLVER_IDS = frozenset(
     {
         "arch",
@@ -100,6 +157,7 @@ BUILTIN_RESOLVER_IDS = frozenset(
         "openmediavault",
         "archcraft",
         "rhino-linux",
+        "calculate-linux",
     }
 )
 
@@ -195,10 +253,17 @@ def resolve_release(provider_id: str, identity: IsoIdentity) -> ReleaseArtifact:
         "openmediavault": _openmediavault,
         "archcraft": _archcraft,
         "rhino-linux": _rhino_linux,
+        "calculate-linux": _calculate_linux,
     }
     try:
         resolver = resolvers[provider_id]
     except KeyError as error:
+        if provider_id in {"windows-10", "windows-11", "windows-server"}:
+            raise ProviderError(
+                "Automatic Microsoft link acquisition is not available. Highlight this ISO "
+                "and choose Official Windows source (L) to provide Microsoft's temporary URL "
+                "or a downloaded ISO together with its official SHA-256."
+            ) from error
         raise ProviderError(
             f"Automatic updates for {provider_id} are not implemented yet."
         ) from error
@@ -2003,12 +2068,14 @@ def _shredos(identity: IsoIdentity) -> ReleaseArtifact:
 def _netbsd(identity: IsoIdentity) -> ReleaseArtifact:
     if (
         identity.product_id != "netbsd"
-        or identity.edition != "installer"
+        or identity.edition not in {"installer", "dvd"}
         or identity.channel != "release"
     ):
-        raise ProviderError("Only NetBSD release installer ISOs are supported.")
-    if identity.architecture not in {"amd64", "i386"}:
+        raise ProviderError("Only NetBSD release installer and DVD ISOs are supported.")
+    if identity.architecture not in _NETBSD_ARCHITECTURES:
         raise ProviderError("This NetBSD architecture is not supported.")
+    if identity.edition == "dvd" and identity.architecture not in {"amd64", "i386", "sparc64"}:
+        raise ProviderError("NetBSD DVD ISOs are published only for amd64, i386 and sparc64.")
     host = "cdn.netbsd.org"
     client = SafeHttpClient(frozenset({host}))
     root = f"https://{host}/pub/NetBSD/"
@@ -2017,7 +2084,8 @@ def _netbsd(identity: IsoIdentity) -> ReleaseArtifact:
     if not versions:
         raise ProviderError("The official NetBSD directory contains no stable release.")
     version = max(versions, key=lambda value: tuple(int(part) for part in value.split(".")))
-    filename = f"NetBSD-{version}-{identity.architecture}.iso"
+    suffix = f"{identity.architecture}-dvd" if identity.edition == "dvd" else identity.architecture
+    filename = f"NetBSD-{version}-{suffix}.iso"
     base = f"{root}NetBSD-{version}/images/"
     checksum = _checksum(_text(client, base + "SHA512"), filename, "sha512")
     return _artifact(
@@ -3616,6 +3684,48 @@ def _porteus(identity: IsoIdentity) -> ReleaseArtifact:
         "sha256",
         _checksum(sums, filename, "sha256"),
         hosts,
+    )
+
+
+def _calculate_linux(identity: IsoIdentity) -> ReleaseArtifact:
+    editions = {
+        "ccm",
+        "cds",
+        "cld",
+        "cldc",
+        "cldl",
+        "cldm",
+        "cldx",
+        "cldxs",
+        "cls",
+        "css",
+    }
+    if (
+        identity.product_id != "calculate-linux"
+        or identity.edition not in editions
+        or identity.channel != "rolling"
+        or identity.architecture != "x86_64"
+        or identity.flavor is not None
+    ):
+        raise ProviderError("This Calculate Linux image variant is unsupported.")
+    host = "mirror.calculate-linux.org"
+    root = f"https://{host}/release/"
+    client = SafeHttpClient(frozenset({host}))
+    releases = re.findall(r'href=["\'](?P<version>\d{8})/["\']', _text(client, root))
+    if not releases:
+        raise ProviderError("The official Calculate Linux directory contains no releases.")
+    version = max(releases)
+    filename = f"{identity.edition}-{version}-x86_64.iso"
+    base = f"{root}{version}/"
+    sums = _text(client, base + "SHA512SUMS")
+    return _artifact(
+        identity,
+        version,
+        filename,
+        base + filename,
+        "sha512",
+        _checksum(sums, filename, "sha512"),
+        {host},
     )
 
 

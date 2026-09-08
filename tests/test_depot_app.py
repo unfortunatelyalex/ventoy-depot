@@ -52,6 +52,11 @@ def test_assignment_profiles_use_supported_product_and_architecture_defaults() -
         "urbackup-restore",
         "x86_64",
     ]
+    assert profiles["Calculate Linux"] == [
+        "calculate-linux",
+        "calculate-linux",
+        "x86_64",
+    ]
     assert profiles["openSUSE Leap"] == ["opensuse-leap", "opensuse-leap", "x86_64"]
     assert profiles["Kubuntu"] == ["ubuntu-flavors", "kubuntu", "amd64"]
     assert profiles["Ubuntu Unity"] == ["ubuntu-flavors", "ubuntu-unity", "amd64"]

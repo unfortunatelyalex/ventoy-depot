@@ -7,6 +7,62 @@ from pathlib import Path
 from ..models import DetectedIso, IsoIdentity, ReleaseArtifact
 from .base import Provider, ProviderCapabilities, ProviderError
 
+_NETBSD_ARCHITECTURES = (
+    "acorn32",
+    "alpha",
+    "amd64",
+    "amiga",
+    "arc",
+    "atari",
+    "cats",
+    "cobalt",
+    "dreamcast",
+    "emips",
+    "evbarm-aarch64",
+    "evbarm-aarch64eb",
+    "evbmips-mips64eb",
+    "evbmips-mips64el",
+    "evbmips-mipseb",
+    "evbmips-mipsel",
+    "evbmips-mipsn64eb",
+    "evbmips-mipsn64el",
+    "evbppc",
+    "evbsh3-sh3eb",
+    "evbsh3-sh3el",
+    "ews4800mips",
+    "hp300",
+    "hpcarm",
+    "hpcmips",
+    "hpcsh",
+    "hppa",
+    "i386",
+    "ia64",
+    "ibmnws",
+    "luna68k",
+    "mac68k",
+    "macppc",
+    "mipsco",
+    "mvme68k",
+    "mvmeppc",
+    "news68k",
+    "newsmips",
+    "next68k",
+    "ofppc",
+    "pmax",
+    "prep",
+    "sandpoint",
+    "sgimips",
+    "shark",
+    "sparc",
+    "sparc64",
+    "sun2",
+    "sun3",
+    "vax",
+    "x68k",
+    "zaurus",
+)
+_NETBSD_ARCH_PATTERN = "|".join(map(re.escape, _NETBSD_ARCHITECTURES))
+
 
 @dataclass(frozen=True)
 class FilenameRule:
@@ -1769,7 +1825,17 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
             FilenameRule(
                 re.compile(
                     r"NetBSD-(?P<version>\d+(?:\.\d+)+)-"
-                    r"(?P<architecture>amd64|i386)\.iso$",
+                    r"(?P<architecture>amd64|i386|sparc64)-dvd\.iso$",
+                    re.I,
+                ),
+                "netbsd",
+                default_edition="dvd",
+                default_channel="release",
+            ),
+            FilenameRule(
+                re.compile(
+                    r"NetBSD-(?P<version>\d+(?:\.\d+)+)-"
+                    rf"(?P<architecture>{_NETBSD_ARCH_PATTERN})\.iso$",
                     re.I,
                 ),
                 "netbsd",
@@ -1777,7 +1843,7 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
                 default_channel="release",
             ),
         ),
-        ProviderCapabilities(("installer",), ("amd64", "i386"), (), ("release",)),
+        ProviderCapabilities(("installer", "dvd"), _NETBSD_ARCHITECTURES, (), ("release",)),
     ),
     FilenameProvider(
         "openindiana",
@@ -2731,5 +2797,26 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
             ),
         ),
         ProviderCapabilities(("desktop",), ("x86_64",), (), ("rolling",)),
+    ),
+    FilenameProvider(
+        "calculate-linux",
+        "Calculate Linux",
+        (
+            FilenameRule(
+                re.compile(
+                    r"(?P<edition>ccm|cds|cld|cldc|cldl|cldm|cldx|cldxs|cls|css)-"
+                    r"(?P<version>\d{8})-(?P<architecture>x86_64)\.iso$",
+                    re.I,
+                ),
+                "calculate-linux",
+                default_channel="rolling",
+            ),
+        ),
+        ProviderCapabilities(
+            ("ccm", "cds", "cld", "cldc", "cldl", "cldm", "cldx", "cldxs", "cls", "css"),
+            ("x86_64",),
+            (),
+            ("rolling",),
+        ),
     ),
 )

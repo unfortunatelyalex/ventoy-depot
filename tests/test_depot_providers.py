@@ -166,6 +166,7 @@ from ventoy_depot.providers.builtin import BUILTIN_PROVIDERS
             "desktop",
             "x86_64",
         ),
+        ("cld-20260907-x86_64.iso", "calculate-linux", "cld", "x86_64"),
         ("alpine-standard-3.24.1-x86_64.iso", "alpine", "standard", "x86_64"),
         (
             "chimera-linux-riscv64-LIVE-20251220-plasma.iso",
@@ -229,6 +230,8 @@ from ventoy_depot.providers.builtin import BUILTIN_PROVIDERS
         ),
         ("NetBSD-11.0-amd64.iso", "netbsd", "installer", "amd64"),
         ("NetBSD-11.0-i386.iso", "netbsd", "installer", "i386"),
+        ("NetBSD-11.0-evbarm-aarch64.iso", "netbsd", "installer", "evbarm-aarch64"),
+        ("NetBSD-11.0-sparc64-dvd.iso", "netbsd", "dvd", "sparc64"),
         ("OI-hipster-gui-20260430.iso", "openindiana", "gui", "x86_64"),
         ("OI-hipster-text-20260430.iso", "openindiana", "text", "x86_64"),
         ("OI-hipster-minimal-20260430.iso", "openindiana", "minimal", "x86_64"),

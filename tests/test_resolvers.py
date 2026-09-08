@@ -1094,8 +1094,18 @@ def test_shredos_resolver_preserves_architecture_and_image_variant(monkeypatch) 
     assert artifact.identity.variant_key() == installed.variant_key()
 
 
-def test_netbsd_resolver_uses_latest_release_sha512(monkeypatch) -> None:
-    filename = "NetBSD-11.0-amd64.iso"
+@pytest.mark.parametrize(
+    ("edition", "architecture", "suffix"),
+    [
+        ("installer", "amd64", "amd64"),
+        ("installer", "evbarm-aarch64", "evbarm-aarch64"),
+        ("dvd", "sparc64", "sparc64-dvd"),
+    ],
+)
+def test_netbsd_resolver_uses_latest_release_sha512(
+    monkeypatch, edition: str, architecture: str, suffix: str
+) -> None:
+    filename = f"NetBSD-11.0-{suffix}.iso"
     digest = "9" * 128
     root = "https://cdn.netbsd.org/pub/NetBSD/"
 
@@ -1111,7 +1121,7 @@ def test_netbsd_resolver_uses_latest_release_sha512(monkeypatch) -> None:
 
     monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
     installed = IsoIdentity(
-        "netbsd", "netbsd", "installer", None, "release", "amd64", None, "10.1", None
+        "netbsd", "netbsd", edition, None, "release", architecture, None, "10.1", None
     )
     artifact = resolvers.resolve_release("netbsd", installed)
 
@@ -3413,5 +3423,54 @@ def test_midnightbsd_resolver_preserves_medium_and_architecture(
     assert artifact.checksum_algorithm == "sha512"
     assert artifact.checksum == digest
     assert artifact.download_url == base + filename
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()
+
+
+@pytest.mark.parametrize("provider_id", ["windows-10", "windows-11", "windows-server"])
+def test_windows_resolver_points_to_safe_official_source_handoff(provider_id: str) -> None:
+    with pytest.raises(resolvers.ProviderError, match=r"Official Windows source \(L\)"):
+        resolvers.resolve_release(provider_id, identity(provider_id))
+
+
+@pytest.mark.parametrize(
+    "edition", ["ccm", "cds", "cld", "cldc", "cldl", "cldm", "cldx", "cldxs", "cls", "css"]
+)
+def test_calculate_linux_resolver_preserves_profile(monkeypatch, edition: str) -> None:
+    version = "20260907"
+    filename = f"{edition}-{version}-x86_64.iso"
+    digest = "c" * 128
+    root = "https://mirror.calculate-linux.org/release/"
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, requested: str) -> bytes:
+            if requested == root:
+                return b'<a href="20260906/">old</a><a href="20260907/">new</a>'
+            assert requested == root + version + "/SHA512SUMS"
+            return f"{digest}  {filename}\n".encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "calculate-linux",
+        "calculate-linux",
+        edition,
+        None,
+        "rolling",
+        "x86_64",
+        None,
+        "20260906",
+        None,
+    )
+
+    artifact = resolvers.resolve_release("calculate-linux", installed)
+
+    assert artifact.version == version
+    assert artifact.filename == filename
+    assert artifact.download_url == root + version + "/" + filename
+    assert artifact.checksum_algorithm == "sha512"
+    assert artifact.checksum == digest
     assert artifact.identity is not None
     assert artifact.identity.variant_key() == installed.variant_key()
