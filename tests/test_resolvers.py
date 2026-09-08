@@ -3110,3 +3110,92 @@ def test_archbang_resolver_formats_date_and_uses_sourceforge_sha256(monkeypatch)
     assert artifact.download_url.endswith(f"/{filename}/download?use_mirror=netix")
     assert artifact.identity is not None
     assert artifact.identity.variant_key() == installed.variant_key()
+
+
+def test_puppy_linux_resolver_uses_latest_bookwormpup64_sha256(monkeypatch) -> None:
+    filename = "BookwormPup64_10.0.12.iso"
+    digest = "a" * 64
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, requested: str) -> bytes:
+            base = "https://distro.ibiblio.org/puppylinux/puppy-bookwormpup/BookwormPup64/"
+            if requested == base:
+                return b'<a href="10.0.9/">10.0.9/</a><a href="10.0.12/">10.0.12/</a>'
+            assert requested == base + "10.0.12/" + filename + "-checksum.txt"
+            return f"{digest}  {filename}\n".encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "puppy-linux",
+        "puppy-linux",
+        "bookwormpup64",
+        None,
+        "stable",
+        "x86_64",
+        None,
+        "10.0.9",
+        None,
+    )
+
+    artifact = resolvers.resolve_release("puppy-linux", installed)
+
+    assert artifact.version == "10.0.12"
+    assert artifact.filename == filename
+    assert artifact.download_url.endswith(f"/10.0.12/{filename}")
+    assert artifact.checksum == digest
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()
+
+
+@pytest.mark.parametrize(
+    ("edition", "architecture", "filename"),
+    [
+        ("standard", "x86_64", "bodhi-7.0.0-64.iso"),
+        ("hwe", "x86_64", "bodhi-7.0.0-64-hwe.iso"),
+        ("s76", "x86_64", "bodhi-7.0.0-64-s76.iso"),
+        ("apppack", "x86_64", "bodhi-7.0.0-64-apppack.iso"),
+        ("legacy", "i386", "bodhi-5.1.0-legacy.iso"),
+    ],
+)
+def test_bodhi_linux_resolver_preserves_edition_and_uses_sha256(
+    monkeypatch, edition: str, architecture: str, filename: str
+) -> None:
+    digest = "b" * 64
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, requested: str) -> bytes:
+            if requested == "https://www.bodhilinux.com/download/":
+                return (
+                    b"bodhi-7.0.0-64.iso bodhi-7.0.0-64-hwe.iso "
+                    b"bodhi-7.0.0-64-s76.iso bodhi-7.0.0-64-apppack.iso "
+                    b"bodhi-5.1.0-legacy.iso"
+                )
+            assert requested.endswith(f"/{filename}.sha256/download?use_mirror=netix")
+            return f"{digest}  {filename}\n".encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "bodhi-linux",
+        "bodhi-linux",
+        edition,
+        None,
+        "stable",
+        architecture,
+        None,
+        "1.0",
+        None,
+    )
+
+    artifact = resolvers.resolve_release("bodhi-linux", installed)
+
+    assert artifact.filename == filename
+    assert artifact.checksum == digest
+    assert artifact.download_url.endswith(f"/{filename}/download?use_mirror=netix")
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()

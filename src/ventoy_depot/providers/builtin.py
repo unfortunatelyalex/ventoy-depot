@@ -1480,6 +1480,46 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
         ProviderCapabilities(("desktop",), ("x86_64",), (), ("rolling",)),
     ),
     FilenameProvider(
+        "puppy-linux",
+        "Puppy Linux",
+        (
+            FilenameRule(
+                re.compile(r"BookwormPup64_(?P<version>\d+(?:\.\d+)+)\.iso$", re.I),
+                "puppy-linux",
+                default_edition="bookwormpup64",
+                default_architecture="x86_64",
+            ),
+        ),
+        ProviderCapabilities(("bookwormpup64",), ("x86_64",), (), ("stable",)),
+    ),
+    FilenameProvider(
+        "bodhi-linux",
+        "Bodhi Linux",
+        (
+            FilenameRule(
+                re.compile(
+                    r"bodhi-(?P<version>\d+(?:\.\d+)+)-64(?:-(?P<edition>hwe|s76|apppack))?\.iso$",
+                    re.I,
+                ),
+                "bodhi-linux",
+                default_edition="standard",
+                default_architecture="x86_64",
+            ),
+            FilenameRule(
+                re.compile(r"bodhi-(?P<version>\d+(?:\.\d+)+)-legacy\.iso$", re.I),
+                "bodhi-linux",
+                default_edition="legacy",
+                default_architecture="i386",
+            ),
+        ),
+        ProviderCapabilities(
+            ("standard", "hwe", "s76", "apppack", "legacy"),
+            ("x86_64", "i386"),
+            (),
+            ("stable",),
+        ),
+    ),
+    FilenameProvider(
         "vanilla-os",
         "Vanilla OS",
         (
@@ -2347,5 +2387,135 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
             ),
         ),
         ProviderCapabilities(("base",), ("x86_64",), (), ("preview",)),
+    ),
+    FilenameProvider(
+        "boot-repair-disk",
+        "Boot-Repair-Disk",
+        (
+            FilenameRule(
+                re.compile(r"boot-repair-disk-64bit\.iso$", re.I),
+                "boot-repair-disk",
+                default_edition="live",
+                default_architecture="x86_64",
+            ),
+        ),
+        ProviderCapabilities(("live",), ("x86_64",), (), ("stable",)),
+    ),
+    FilenameProvider(
+        "blackarch",
+        "BlackArch Linux",
+        (
+            FilenameRule(
+                re.compile(
+                    r"blackarch-linux-(?P<edition>full|slim|netinst)-"
+                    r"(?P<version>\d{4}\.\d{2}\.\d{2})-x86_64\.iso$",
+                    re.I,
+                ),
+                "blackarch",
+                default_channel="rolling",
+                default_architecture="x86_64",
+            ),
+        ),
+        ProviderCapabilities(("full", "slim", "netinst"), ("x86_64",), (), ("rolling",)),
+    ),
+    FilenameProvider(
+        "q4os",
+        "Q4OS",
+        (
+            FilenameRule(
+                re.compile(r"q4os-(?P<version>\d+(?:\.\d+)+)-x64\.r(?P<build>\d+)\.iso$", re.I),
+                "q4os",
+                default_edition="plasma-live",
+                default_architecture="x86_64",
+            ),
+            FilenameRule(
+                re.compile(r"q4os-(?P<version>\d+(?:\.\d+)+)-x64-tde\.r(?P<build>\d+)\.iso$", re.I),
+                "q4os",
+                default_edition="trinity-live",
+                default_architecture="x86_64",
+            ),
+            FilenameRule(
+                re.compile(
+                    r"q4os-(?P<version>\d+(?:\.\d+)+)-x64-instcd\.r(?P<build>\d+)\.iso$",
+                    re.I,
+                ),
+                "q4os",
+                default_edition="trinity-install",
+                default_architecture="x86_64",
+            ),
+            FilenameRule(
+                re.compile(
+                    r"q4os-(?P<version>\d+(?:\.\d+)+)-i386-instcd\.r(?P<build>\d+)\.iso$",
+                    re.I,
+                ),
+                "q4os",
+                default_edition="trinity-install",
+                default_channel="old-stable",
+                default_architecture="i386",
+            ),
+        ),
+        ProviderCapabilities(
+            ("plasma-live", "trinity-live", "trinity-install"),
+            ("x86_64", "i386"),
+            (),
+            ("stable", "old-stable"),
+        ),
+    ),
+    FilenameProvider(
+        "peppermint-os",
+        "Peppermint OS",
+        (
+            FilenameRule(
+                re.compile(r"peppermint_(?P<edition>debian|devuan)-amd64\.iso$", re.I),
+                "peppermint-os",
+                default_channel="manual",
+                default_architecture="amd64",
+            ),
+        ),
+        ProviderCapabilities(("debian", "devuan"), ("amd64",), (), ("manual",)),
+    ),
+    FilenameProvider(
+        "fatdog64",
+        "Fatdog64",
+        (
+            FilenameRule(
+                re.compile(r"Fatdog64-(?P<version>\d+)\.iso$", re.I),
+                "fatdog64",
+                default_edition="live",
+                default_architecture="x86_64",
+            ),
+        ),
+        ProviderCapabilities(("live",), ("x86_64",), (), ("stable",)),
+    ),
+    FilenameProvider(
+        "slax",
+        "Slax",
+        (
+            FilenameRule(
+                re.compile(r"slax-64bit-(?P<version>\d+(?:\.\d+)+)\.iso$", re.I),
+                "slax",
+                default_edition="debian",
+                default_architecture="x86_64",
+            ),
+            FilenameRule(
+                re.compile(r"slax-32bit-(?P<version>\d+(?:\.\d+)+)\.iso$", re.I),
+                "slax",
+                default_edition="debian",
+                default_architecture="i386",
+            ),
+            FilenameRule(
+                re.compile(r"slax-64bit-slackware-(?P<version>\d+(?:\.\d+)+)\.iso$", re.I),
+                "slax",
+                default_edition="slackware",
+                default_architecture="x86_64",
+            ),
+            FilenameRule(
+                re.compile(r"slax-32bit-slackware-(?P<version>\d+(?:\.\d+)+)\.iso$", re.I),
+                "slax",
+                default_edition="slackware",
+                default_architecture="i386",
+            ),
+        ),
+        ProviderCapabilities(("debian", "slackware"), ("x86_64", "i386"), (), ("stable",)),
     ),
 )

@@ -129,6 +129,21 @@ from ventoy_depot.providers.builtin import BUILTIN_PROVIDERS
         ("tsurugi_acquire_2021.1.iso", "tsurugi-linux", "acquire", "i386"),
         ("archbang-050926-x86_64.iso", "archbang", "desktop", "x86_64"),
         ("archbang-220826.iso", "archbang", "desktop", "x86_64"),
+        ("BookwormPup64_10.0.12.iso", "puppy-linux", "bookwormpup64", "x86_64"),
+        ("bodhi-7.0.0-64.iso", "bodhi-linux", "standard", "x86_64"),
+        ("bodhi-7.0.0-64-hwe.iso", "bodhi-linux", "hwe", "x86_64"),
+        ("bodhi-7.0.0-64-s76.iso", "bodhi-linux", "s76", "x86_64"),
+        ("bodhi-7.0.0-64-apppack.iso", "bodhi-linux", "apppack", "x86_64"),
+        ("bodhi-5.1.0-legacy.iso", "bodhi-linux", "legacy", "i386"),
+        ("boot-repair-disk-64bit.iso", "boot-repair-disk", "live", "x86_64"),
+        ("blackarch-linux-full-2026.09.01-x86_64.iso", "blackarch", "full", "x86_64"),
+        ("q4os-6.8-x64.r1.iso", "q4os", "plasma-live", "x86_64"),
+        ("q4os-6.8-x64-tde.r1.iso", "q4os", "trinity-live", "x86_64"),
+        ("q4os-6.8-x64-instcd.r1.iso", "q4os", "trinity-install", "x86_64"),
+        ("peppermint_devuan-amd64.iso", "peppermint-os", "devuan", "amd64"),
+        ("Fatdog64-904.iso", "fatdog64", "live", "x86_64"),
+        ("slax-64bit-15.0.1.iso", "slax", "debian", "x86_64"),
+        ("slax-32bit-slackware-15.0.4.iso", "slax", "slackware", "i386"),
         ("alpine-standard-3.24.1-x86_64.iso", "alpine", "standard", "x86_64"),
         (
             "chimera-linux-riscv64-LIVE-20251220-plasma.iso",
@@ -283,6 +298,16 @@ def test_variant_preserving_detection(
         detected.identity.edition,
         detected.identity.architecture,
     ) == (provider, edition, architecture)
+
+
+def test_blackarch_detection_preserves_rolling_channel_without_enabling_downloads() -> None:
+    provider = provider_map()["blackarch"]
+
+    detected = provider.detect(Path("blackarch-linux-slim-2026.09.01-x86_64.iso"))
+
+    assert detected is not None
+    assert detected.identity.channel == "rolling"
+    assert provider.supports_automatic_download is False
 
 
 def test_unknown_filename_is_not_guessed() -> None:

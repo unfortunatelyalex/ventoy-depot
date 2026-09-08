@@ -93,6 +93,8 @@ BUILTIN_RESOLVER_IDS = frozenset(
         "linux-lite",
         "tsurugi-linux",
         "archbang",
+        "puppy-linux",
+        "bodhi-linux",
     }
 )
 
@@ -181,6 +183,8 @@ def resolve_release(provider_id: str, identity: IsoIdentity) -> ReleaseArtifact:
         "linux-lite": _linux_lite,
         "tsurugi-linux": _tsurugi_linux,
         "archbang": _archbang,
+        "puppy-linux": _puppy_linux,
+        "bodhi-linux": _bodhi_linux,
     }
     try:
         resolver = resolvers[provider_id]
@@ -3342,4 +3346,84 @@ def _archbang(identity: IsoIdentity) -> ReleaseArtifact:
         checksum,
         hosts,
         size_bytes=size_bytes,
+    )
+
+
+def _puppy_linux(identity: IsoIdentity) -> ReleaseArtifact:
+    if identity.product_id != "puppy-linux" or identity.edition != "bookwormpup64":
+        raise ProviderError("This Puppy Linux edition is not supported automatically.")
+    if identity.architecture != "x86_64" or identity.channel != "stable":
+        raise ProviderError("Puppy Linux automatic updates support stable BookwormPup64 only.")
+    hosts = {"distro.ibiblio.org"}
+    client = SafeHttpClient(frozenset(hosts))
+    base = "https://distro.ibiblio.org/puppylinux/puppy-bookwormpup/BookwormPup64/"
+    page = _text(client, base)
+    versions = set(re.findall(r'href="(?P<version>\d+(?:\.\d+)+)/"', page, re.I))
+    if not versions:
+        raise ProviderError("The official Puppy Linux directory contains no BookwormPup64 release.")
+    version = max(versions, key=_version_key)
+    filename = f"BookwormPup64_{version}.iso"
+    release_base = f"{base}{version}/"
+    checksum = _checksum(
+        _text(client, release_base + filename + "-checksum.txt"),
+        filename,
+        "sha256",
+    )
+    return _artifact(
+        identity,
+        version,
+        filename,
+        release_base + filename,
+        "sha256",
+        checksum,
+        hosts,
+    )
+
+
+def _bodhi_linux(identity: IsoIdentity) -> ReleaseArtifact:
+    variants = {
+        "standard": ("x86_64", r"64"),
+        "hwe": ("x86_64", r"64-hwe"),
+        "s76": ("x86_64", r"64-s76"),
+        "apppack": ("x86_64", r"64-apppack"),
+        "legacy": ("i386", r"legacy"),
+    }
+    if identity.product_id != "bodhi-linux" or identity.edition not in variants:
+        raise ProviderError("This Bodhi Linux edition is not supported automatically.")
+    architecture, suffix = variants[identity.edition]
+    if identity.architecture != architecture or identity.channel != "stable":
+        raise ProviderError("This Bodhi Linux architecture or channel is not supported.")
+    hosts = {
+        "www.bodhilinux.com",
+        "sourceforge.net",
+        "downloads.sourceforge.net",
+        "netix.dl.sourceforge.net",
+    }
+    client = SafeHttpClient(frozenset(hosts))
+    page = _text(client, "https://www.bodhilinux.com/download/")
+    expression = re.compile(
+        rf"\b(bodhi-(?P<version>\d+(?:\.\d+)+)-{suffix}\.iso)\b",
+        re.I,
+    )
+    matches = list(expression.finditer(page))
+    if not matches:
+        raise ProviderError("The official Bodhi Linux page lacks this released edition.")
+    match = max(matches, key=lambda item: _version_key(item.group("version")))
+    version = match.group("version")
+    filename = match.group(1)
+    source = f"https://sourceforge.net/projects/bodhilinux/files/{version}/{filename}"
+    mirror = "?use_mirror=netix"
+    checksum = _checksum(
+        _text(client, source + ".sha256/download" + mirror),
+        filename,
+        "sha256",
+    )
+    return _artifact(
+        identity,
+        version,
+        filename,
+        source + "/download" + mirror,
+        "sha256",
+        checksum,
+        hosts,
     )
