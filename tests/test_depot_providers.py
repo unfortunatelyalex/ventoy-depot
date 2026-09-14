@@ -185,6 +185,7 @@ from ventoy_depot.providers.builtin import BUILTIN_PROVIDERS
         ("trisquel-mini_12.0_amd64.iso", "trisquel", "mini", "amd64"),
         ("trisquel-sugar_12.0_amd64.iso", "trisquel", "sugar", "amd64"),
         ("trisquel-netinst_12.0_arm64.iso", "trisquel", "netinst", "arm64"),
+        ("slackware64-live-15.0.iso", "slackware-live", "full", "x86_64"),
         ("alpine-standard-3.24.1-x86_64.iso", "alpine", "standard", "x86_64"),
         (
             "chimera-linux-riscv64-LIVE-20251220-plasma.iso",
@@ -452,6 +453,21 @@ def test_manual_assignment_cannot_invent_provider_channel(monkeypatch) -> None:
     )
     with pytest.raises(ProviderError, match="channel"):
         provider_map()["ubuntu"].resolve(identity)
+
+
+@pytest.mark.parametrize(
+    "filename",
+    (
+        "slackware64-live-current.iso",
+        "slackware-live-xfce-current.iso",
+        "slackware64-live-15.0.iso.sha256",
+    ),
+)
+def test_slackware_live_does_not_misidentify_unversioned_or_non_iso_media(
+    filename: str,
+) -> None:
+    provider = next(item for item in BUILTIN_PROVIDERS if item.provider_id == "slackware-live")
+    assert provider.detect(Path(filename)) is None
 
 
 @pytest.mark.parametrize(

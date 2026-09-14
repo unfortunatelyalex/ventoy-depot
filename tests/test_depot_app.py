@@ -59,6 +59,11 @@ def test_assignment_profiles_use_supported_product_and_architecture_defaults() -
     ]
     assert profiles["openEuler"] == ["openeuler", "openeuler", "x86_64"]
     assert profiles["Trisquel GNU/Linux"] == ["trisquel", "trisquel", "amd64"]
+    assert profiles["Slackware Live Edition"] == [
+        "slackware-live",
+        "slackware-live",
+        "x86_64",
+    ]
     assert profiles["openSUSE Leap"] == ["opensuse-leap", "opensuse-leap", "x86_64"]
     assert profiles["Kubuntu"] == ["ubuntu-flavors", "kubuntu", "amd64"]
     assert profiles["Ubuntu Unity"] == ["ubuntu-flavors", "ubuntu-unity", "amd64"]

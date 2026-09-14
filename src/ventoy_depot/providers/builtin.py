@@ -2898,4 +2898,17 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
             ("stable",),
         ),
     ),
+    FilenameProvider(
+        "slackware-live",
+        "Slackware Live Edition",
+        (
+            FilenameRule(
+                re.compile(r"slackware64-live-(?P<version>\d+(?:\.\d+)+)\.iso$", re.I),
+                "slackware-live",
+                default_edition="full",
+                default_architecture="x86_64",
+            ),
+        ),
+        ProviderCapabilities(("full",), ("x86_64",), (), ("stable",)),
+    ),
 )

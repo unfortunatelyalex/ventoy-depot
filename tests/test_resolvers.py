@@ -69,6 +69,68 @@ def test_adelie_resolver_preserves_medium_desktop_and_architecture(
     assert artifact.identity.variant_key() == installed.variant_key()
 
 
+def test_slackware_live_resolver_uses_stable_iso_and_official_sha256(monkeypatch) -> None:
+    filename = "slackware64-live-15.0.iso"
+    root = "https://download.liveslak.org/"
+    base = root + "slackware64-15.0-live/"
+    digest = "a" * 64
+
+    class FakeClient:
+        def __init__(self, hosts: frozenset[str]) -> None:
+            assert hosts == frozenset({"download.liveslak.org"})
+
+        def metadata(self, requested: str) -> bytes:
+            if requested == root:
+                return (
+                    b'<a href="slackware64-14.2-live/">old</a>'
+                    b'<a href="slackware64-15.0-live/">stable</a>'
+                    b'<a href="slackware64-current-live/">current</a>'
+                )
+            if requested == base:
+                return f'<a href="{filename}">{filename}</a>'.encode()
+            assert requested == base + filename + ".sha256"
+            return f"{digest}  {filename}\n".encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    identity = IsoIdentity(
+        "slackware-live",
+        "slackware-live",
+        "full",
+        None,
+        "stable",
+        "x86_64",
+        None,
+        "14.2",
+        None,
+    )
+
+    artifact = resolvers.resolve_release("slackware-live", identity)
+
+    assert artifact.version == "15.0"
+    assert artifact.filename == filename
+    assert artifact.download_url == base + filename
+    assert artifact.checksum_algorithm == "sha256"
+    assert artifact.checksum == digest
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == identity.variant_key()
+
+
+def test_slackware_live_resolver_rejects_other_channels() -> None:
+    identity = IsoIdentity(
+        "slackware-live",
+        "slackware-live",
+        "full",
+        None,
+        "current",
+        "x86_64",
+        None,
+        "current",
+        None,
+    )
+    with pytest.raises(resolvers.ProviderError, match="unsupported"):
+        resolvers.resolve_release("slackware-live", identity)
+
+
 def test_kaos_resolver_uses_official_dinit_mirror_and_embedded_sha256(monkeypatch) -> None:
     filename = "KaOS-DINIT-2026.06-x86_64.iso"
     url = f"https://kaosx-eu.yourhostingsolutions.com/{filename}"

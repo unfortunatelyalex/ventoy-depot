@@ -160,6 +160,7 @@ BUILTIN_RESOLVER_IDS = frozenset(
         "calculate-linux",
         "openeuler",
         "trisquel",
+        "slackware-live",
     }
 )
 
@@ -258,6 +259,7 @@ def resolve_release(provider_id: str, identity: IsoIdentity) -> ReleaseArtifact:
         "calculate-linux": _calculate_linux,
         "openeuler": _openeuler,
         "trisquel": _trisquel,
+        "slackware-live": _slackware_live,
     }
     try:
         resolver = resolvers[provider_id]
@@ -3820,6 +3822,36 @@ def _trisquel(identity: IsoIdentity) -> ReleaseArtifact:
         checksum,
         {host},
     )
+
+
+def _slackware_live(identity: IsoIdentity) -> ReleaseArtifact:
+    if (
+        identity.product_id != "slackware-live"
+        or identity.edition != "full"
+        or identity.flavor is not None
+        or identity.channel != "stable"
+        or identity.architecture != "x86_64"
+        or identity.language is not None
+    ):
+        raise ProviderError("This Slackware Live image variant is unsupported.")
+    host = "download.liveslak.org"
+    root = f"https://{host}/"
+    client = SafeHttpClient(frozenset({host}))
+    versions = re.findall(
+        r'href=["\']slackware64-(\d+(?:\.\d+)+)-live/["\']',
+        _text(client, root),
+        re.IGNORECASE,
+    )
+    if not versions:
+        raise ProviderError("The official Slackware Live index has no stable release.")
+    version = max(versions, key=_version_key)
+    filename = f"slackware64-live-{version}.iso"
+    base = f"{root}slackware64-{version}-live/"
+    listing = _text(client, base)
+    if not re.search(rf'href=["\']{re.escape(filename)}["\']', listing, re.IGNORECASE):
+        raise ProviderError("The stable Slackware Live directory has no matching ISO.")
+    checksum = _checksum(_text(client, base + filename + ".sha256"), filename, "sha256")
+    return _artifact(identity, version, filename, base + filename, "sha256", checksum, {host})
 
 
 def _midnightbsd(identity: IsoIdentity) -> ReleaseArtifact:
