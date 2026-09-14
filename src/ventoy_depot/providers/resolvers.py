@@ -159,6 +159,7 @@ BUILTIN_RESOLVER_IDS = frozenset(
         "rhino-linux",
         "calculate-linux",
         "openeuler",
+        "trisquel",
     }
 )
 
@@ -256,6 +257,7 @@ def resolve_release(provider_id: str, identity: IsoIdentity) -> ReleaseArtifact:
         "rhino-linux": _rhino_linux,
         "calculate-linux": _calculate_linux,
         "openeuler": _openeuler,
+        "trisquel": _trisquel,
     }
     try:
         resolver = resolvers[provider_id]
@@ -3772,6 +3774,50 @@ def _openeuler(identity: IsoIdentity) -> ReleaseArtifact:
         base + filename,
         "sha256",
         _checksum(sidecar, filename, "sha256"),
+        {host},
+    )
+
+
+def _trisquel(identity: IsoIdentity) -> ReleaseArtifact:
+    prefixes = {
+        "main": "trisquel",
+        "kde": "triskel",
+        "mini": "trisquel-mini",
+        "sugar": "trisquel-sugar",
+        "netinst": "trisquel-netinst",
+    }
+    if (
+        identity.product_id != "trisquel"
+        or identity.edition not in prefixes
+        or identity.channel != "stable"
+        or identity.architecture not in {"amd64", "arm64", "ppc64el"}
+        or identity.flavor is not None
+    ):
+        raise ProviderError("This Trisquel image variant is unsupported.")
+    if identity.edition != "netinst" and identity.architecture != "amd64":
+        raise ProviderError("Trisquel desktop ISOs are currently published for amd64 only.")
+    host = "cdimage.trisquel.info"
+    base = f"https://{host}/trisquel-images/"
+    client = SafeHttpClient(frozenset({host}))
+    prefix = prefixes[identity.edition]
+    expression = re.compile(
+        rf'href=["\'](?P<filename>{re.escape(prefix)}_(?P<version>\d+(?:\.\d+)+)_'
+        rf'{re.escape(identity.architecture)}\.iso)["\']',
+        re.IGNORECASE,
+    )
+    matches = list(expression.finditer(_text(client, base)))
+    if not matches:
+        raise ProviderError("The official Trisquel directory contains no matching ISO.")
+    match = max(matches, key=lambda item: _version_key(item.group("version")))
+    filename, version = match.group("filename"), match.group("version")
+    checksum = _checksum(_text(client, base + filename + ".sha512"), filename, "sha512")
+    return _artifact(
+        identity,
+        version,
+        filename,
+        base + filename,
+        "sha512",
+        checksum,
         {host},
     )
 

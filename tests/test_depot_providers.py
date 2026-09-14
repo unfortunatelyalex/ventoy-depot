@@ -180,6 +180,11 @@ from ventoy_depot.providers.builtin import BUILTIN_PROVIDERS
             "everything",
             "riscv64",
         ),
+        ("trisquel_12.0_amd64.iso", "trisquel", "main", "amd64"),
+        ("triskel_12.0_amd64.iso", "trisquel", "kde", "amd64"),
+        ("trisquel-mini_12.0_amd64.iso", "trisquel", "mini", "amd64"),
+        ("trisquel-sugar_12.0_amd64.iso", "trisquel", "sugar", "amd64"),
+        ("trisquel-netinst_12.0_arm64.iso", "trisquel", "netinst", "arm64"),
         ("alpine-standard-3.24.1-x86_64.iso", "alpine", "standard", "x86_64"),
         (
             "chimera-linux-riscv64-LIVE-20251220-plasma.iso",

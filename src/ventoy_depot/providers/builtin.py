@@ -2853,4 +2853,49 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
             ("lts", "interim"),
         ),
     ),
+    FilenameProvider(
+        "trisquel",
+        "Trisquel GNU/Linux",
+        (
+            FilenameRule(
+                re.compile(
+                    r"trisquel_(?P<version>\d+(?:\.\d+)+)_(?P<architecture>amd64)\.iso$",
+                    re.I,
+                ),
+                "trisquel",
+                default_edition="main",
+            ),
+            FilenameRule(
+                re.compile(
+                    r"triskel_(?P<version>\d+(?:\.\d+)+)_(?P<architecture>amd64)\.iso$",
+                    re.I,
+                ),
+                "trisquel",
+                default_edition="kde",
+            ),
+            FilenameRule(
+                re.compile(
+                    r"trisquel-(?P<edition>mini|sugar)_"
+                    r"(?P<version>\d+(?:\.\d+)+)_(?P<architecture>amd64)\.iso$",
+                    re.I,
+                ),
+                "trisquel",
+            ),
+            FilenameRule(
+                re.compile(
+                    r"trisquel-(?P<edition>netinst)_"
+                    r"(?P<version>\d+(?:\.\d+)+)_"
+                    r"(?P<architecture>amd64|arm64|ppc64el)\.iso$",
+                    re.I,
+                ),
+                "trisquel",
+            ),
+        ),
+        ProviderCapabilities(
+            ("main", "kde", "mini", "sugar", "netinst"),
+            ("amd64", "arm64", "ppc64el"),
+            (),
+            ("stable",),
+        ),
+    ),
 )

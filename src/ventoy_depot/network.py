@@ -76,7 +76,7 @@ class SafeHttpClient:
         for attempt in range(self.metadata_attempts):
             try:
                 return self._metadata_once(url)
-            except TimeoutError:
+            except (TimeoutError, ConnectionError):
                 if attempt + 1 == self.metadata_attempts:
                     raise
             except urllib.error.HTTPError as error:

@@ -3531,3 +3531,54 @@ def test_openeuler_resolver_preserves_channel_medium_and_architecture(
     assert artifact.checksum == digest
     assert artifact.identity is not None
     assert artifact.identity.variant_key() == installed.variant_key()
+
+
+@pytest.mark.parametrize(
+    ("edition", "architecture", "filename"),
+    [
+        ("main", "amd64", "trisquel_12.0_amd64.iso"),
+        ("kde", "amd64", "triskel_12.0_amd64.iso"),
+        ("mini", "amd64", "trisquel-mini_12.0_amd64.iso"),
+        ("sugar", "amd64", "trisquel-sugar_12.0_amd64.iso"),
+        ("netinst", "arm64", "trisquel-netinst_12.0_arm64.iso"),
+        ("netinst", "ppc64el", "trisquel-netinst_12.0_ppc64el.iso"),
+    ],
+)
+def test_trisquel_resolver_preserves_edition_and_architecture(
+    monkeypatch, edition: str, architecture: str, filename: str
+) -> None:
+    digest = "e" * 128
+    base = "https://cdimage.trisquel.info/trisquel-images/"
+
+    class FakeClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def metadata(self, requested: str) -> bytes:
+            if requested == base:
+                old = filename.replace("12.0", "11.0.1")
+                return (f'<a href="{old}">{old}</a><a href="{filename}">{filename}</a>').encode()
+            assert requested == base + filename + ".sha512"
+            return f"{digest}  {filename}\n".encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    installed = IsoIdentity(
+        "trisquel",
+        "trisquel",
+        edition,
+        None,
+        "stable",
+        architecture,
+        None,
+        "11.0.1",
+        None,
+    )
+
+    artifact = resolvers.resolve_release("trisquel", installed)
+
+    assert artifact.version == "12.0"
+    assert artifact.filename == filename
+    assert artifact.checksum_algorithm == "sha512"
+    assert artifact.checksum == digest
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == installed.variant_key()

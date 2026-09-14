@@ -1,5 +1,6 @@
 import urllib.error
 import urllib.request
+from http.client import RemoteDisconnected
 
 import pytest
 
@@ -83,3 +84,23 @@ def test_metadata_retries_a_transient_read_timeout(monkeypatch) -> None:
     assert result == b"data"
     assert first.closed
     assert second.closed
+
+
+def test_metadata_retries_a_remote_disconnect(monkeypatch) -> None:
+    response = FakeResponse("4", b"data")
+    attempts = 0
+
+    def open_with_disconnect(self, url):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RemoteDisconnected("server closed the connection")
+        return response
+
+    monkeypatch.setattr(SafeHttpClient, "open", open_with_disconnect)
+
+    result = SafeHttpClient(frozenset({"example.test"})).metadata("https://example.test/data")
+
+    assert result == b"data"
+    assert attempts == 2
+    assert response.closed
