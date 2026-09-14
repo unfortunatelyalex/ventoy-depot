@@ -15,11 +15,16 @@ class DeviceError(RuntimeError):
 
 
 def is_ventoy_root(path: Path, label: str = "") -> tuple[bool, str]:
-    if label.strip().casefold() == "ventoy":
+    normalized_label = label.strip().casefold()
+    if normalized_label == "vtoyefi":
+        return False, ""
+    if normalized_label == "ventoy":
         return True, "volume-label"
-    if (path / "ventoy").is_dir():
+    directory_marker = path / "ventoy"
+    file_marker = path / ".ventoy"
+    if not directory_marker.is_symlink() and directory_marker.is_dir():
         return True, "ventoy-directory"
-    if (path / ".ventoy").exists():
+    if not file_marker.is_symlink() and file_marker.exists():
         return True, "ventoy-marker"
     return False, ""
 
@@ -29,9 +34,19 @@ def manual_device(mount_path: Path) -> Device:
     valid, reason = is_ventoy_root(resolved)
     if not valid:
         raise DeviceError("The selected path has no Ventoy label or marker.")
+    stable = _manual_stable_identifier(resolved)
+    if stable is None:
+        raise DeviceError("The selected Ventoy volume has no stable device identifier.")
     usage = shutil.disk_usage(resolved)
     return Device(
-        str(resolved), str(resolved), resolved, usage.total, usage.free, False, True, reason
+        f"manual:{stable}",
+        str(resolved),
+        resolved,
+        usage.total,
+        usage.free,
+        False,
+        True,
+        reason,
     )
 
 
@@ -55,10 +70,80 @@ def find_device(identifier: str) -> Device:
 
 
 def revalidate_device(device: Device) -> Device:
-    current = find_device(device.identifier)
+    current = (
+        manual_device(device.mount_path)
+        if not device.is_removable
+        else find_device(device.identifier)
+    )
+    if current.identifier != device.identifier:
+        raise DeviceError("The device identity changed during the operation.")
     if current.mount_path.resolve() != device.mount_path.resolve():
         raise DeviceError("The device mountpoint changed during the operation.")
     return current
+
+
+def _manual_stable_identifier(path: Path) -> str | None:
+    system = platform.system()
+    if system == "Linux":
+        output = _run_json(
+            ["lsblk", "--json", "--output", "NAME,MOUNTPOINT,UUID,SERIAL"],
+            "Could not determine a stable identifier for the selected volume.",
+        )
+        records = output.get("blockdevices") if isinstance(output, dict) else None
+        if not isinstance(records, list):
+            raise DeviceError("lsblk returned an unexpected response.")
+        return _stable_id_for_linux_mount(records, path)
+    if system == "Windows":
+        drive = path.drive.rstrip(":")
+        if len(drive) != 1 or not drive.isalpha():
+            return None
+        script = (
+            f"$part=Get-Partition -DriveLetter '{drive}' -ErrorAction Stop; "
+            "$disk=Get-Disk -Number $part.DiskNumber -ErrorAction Stop; "
+            "[PSCustomObject]@{UniqueId=$disk.UniqueId} | ConvertTo-Json -Compress"
+        )
+        output = _run_json(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+            "Could not determine a stable identifier for the selected volume.",
+        )
+        unique_id = output.get("UniqueId") if isinstance(output, dict) else None
+        return (
+            f"windows:{unique_id.strip()}"
+            if isinstance(unique_id, str) and unique_id.strip()
+            else None
+        )
+    return None
+
+
+def _stable_id_for_linux_mount(
+    records: list[Any], path: Path, inherited_serial: str | None = None
+) -> str | None:
+    expected = path.resolve()
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        serial = record.get("serial")
+        effective_serial = (
+            serial.strip() if isinstance(serial, str) and serial.strip() else inherited_serial
+        )
+        mountpoint = record.get("mountpoint")
+        if isinstance(mountpoint, str) and mountpoint:
+            try:
+                matches = Path(mountpoint).resolve() == expected
+            except OSError:
+                matches = False
+            if matches:
+                uuid = record.get("uuid")
+                if isinstance(uuid, str) and uuid.strip():
+                    return f"linux-uuid:{uuid.strip()}"
+                if effective_serial:
+                    return f"linux-serial:{effective_serial}"
+        children = record.get("children")
+        if isinstance(children, list):
+            found = _stable_id_for_linux_mount(children, path, effective_serial)
+            if found is not None:
+                return found
+    return None
 
 
 def _linux_devices() -> list[Device]:

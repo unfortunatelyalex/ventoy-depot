@@ -2,26 +2,94 @@ from pathlib import Path
 
 import pytest
 
-from ventoy_depot.devices import DeviceError, _linux_devices, _windows_devices, is_ventoy_root
-from ventoy_iso_updater.devices import _is_ventoy_root
-
-
-def test_ventoy_marker_is_detected(tmp_path: Path) -> None:
-    (tmp_path / "ventoy").mkdir()
-    assert _is_ventoy_root(tmp_path)
-
-
-def test_ventoy_label_is_detected(tmp_path: Path) -> None:
-    assert _is_ventoy_root(tmp_path, "Ventoy")
-
-
-def test_generic_removable_drive_is_not_assumed_to_be_ventoy(tmp_path: Path) -> None:
-    assert not _is_ventoy_root(tmp_path, "USB")
+from ventoy_depot.devices import (
+    DeviceError,
+    _linux_devices,
+    _stable_id_for_linux_mount,
+    _windows_devices,
+    is_ventoy_root,
+    manual_device,
+    revalidate_device,
+)
 
 
 def test_label_must_be_exactly_ventoy(tmp_path: Path) -> None:
     assert is_ventoy_root(tmp_path, "Ventoy") == (True, "volume-label")
     assert is_ventoy_root(tmp_path, "not-ventoy-backup") == (False, "")
+
+
+def test_ventoy_efi_partition_is_never_a_data_volume(tmp_path: Path) -> None:
+    (tmp_path / "ventoy").mkdir()
+
+    assert is_ventoy_root(tmp_path, "VTOYEFI") == (False, "")
+
+
+def test_manual_device_requires_a_ventoy_filesystem_marker(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(
+        "ventoy_depot.devices._manual_stable_identifier", lambda _path: "linux-uuid:test"
+    )
+    with pytest.raises(DeviceError, match="no Ventoy label or marker"):
+        manual_device(tmp_path)
+
+    (tmp_path / "ventoy").mkdir()
+    device = manual_device(tmp_path)
+
+    assert device.mount_path == tmp_path.resolve()
+    assert device.identifier == "manual:linux-uuid:test"
+    assert device.is_ventoy
+    assert device.detection_reason == "ventoy-directory"
+
+
+def test_manual_device_requires_stable_identifier(monkeypatch, tmp_path: Path) -> None:
+    (tmp_path / "ventoy").mkdir()
+    monkeypatch.setattr("ventoy_depot.devices._manual_stable_identifier", lambda _path: None)
+
+    with pytest.raises(DeviceError, match="no stable device identifier"):
+        manual_device(tmp_path)
+
+
+def test_manual_device_revalidation_rejects_replaced_volume(monkeypatch, tmp_path: Path) -> None:
+    (tmp_path / "ventoy").mkdir()
+    identifiers = iter(("linux-uuid:first", "linux-uuid:replacement"))
+    monkeypatch.setattr(
+        "ventoy_depot.devices._manual_stable_identifier", lambda _path: next(identifiers)
+    )
+    selected = manual_device(tmp_path)
+
+    with pytest.raises(DeviceError, match="identity changed"):
+        revalidate_device(selected)
+
+
+def test_manual_linux_identifier_prefers_filesystem_uuid(tmp_path: Path) -> None:
+    payload = [
+        {
+            "serial": "disk-serial",
+            "children": [{"mountpoint": str(tmp_path), "uuid": "volume-uuid", "serial": None}],
+        }
+    ]
+
+    assert _stable_id_for_linux_mount(payload, tmp_path) == "linux-uuid:volume-uuid"
+
+
+def test_manual_linux_identifier_falls_back_to_parent_disk_serial(tmp_path: Path) -> None:
+    payload = [
+        {
+            "serial": "disk-serial",
+            "children": [{"mountpoint": str(tmp_path), "uuid": None, "serial": None}],
+        }
+    ]
+
+    assert _stable_id_for_linux_mount(payload, tmp_path) == "linux-serial:disk-serial"
+
+
+def test_symlinked_ventoy_markers_are_rejected(tmp_path: Path) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    root = tmp_path / "root"
+    root.mkdir()
+    (root / "ventoy").symlink_to(outside, target_is_directory=True)
+
+    assert is_ventoy_root(root) == (False, "")
 
 
 @pytest.mark.parametrize("payload", [[], "invalid", {"blockdevices": "invalid"}])

@@ -55,6 +55,18 @@ class ReleaseArtifact:
     signer_fingerprints: tuple[str, ...]
     allowed_hosts: frozenset[str]
     identity: IsoIdentity | None = None
+    source_path: Path | None = None
+    download_filename: str | None = None
+    archive_format: str | None = None
+    archive_member: str | None = None
+    extracted_size_bytes: int | None = None
+
+    @property
+    def installed_size_bytes(self) -> int | None:
+        """Return the space required by the final ISO, not its download container."""
+        if self.archive_format is not None:
+            return self.extracted_size_bytes
+        return self.size_bytes
 
     @property
     def verification_level(self) -> VerificationLevel:
@@ -84,6 +96,7 @@ class DetectedIso:
     confidence: float
     detection_source: str
     sha256: str | None = None
+    volume_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -96,6 +109,7 @@ class PlanItem:
     verification_level: VerificationLevel
     warnings: tuple[str, ...] = ()
     blocking_errors: tuple[str, ...] = ()
+    replacement_allowed: bool = False
 
     @property
     def writable(self) -> bool:
@@ -111,6 +125,15 @@ class UpdatePlan:
     @property
     def required_bytes(self) -> int:
         return sum(item.required_bytes or 0 for item in self.items if item.writable)
+
+
+@dataclass(frozen=True)
+class LocalVerification:
+    path: Path
+    algorithm: str
+    checksum: str
+    expected: str | None
+    verified: bool | None
 
 
 def to_jsonable(value: Any) -> Any:

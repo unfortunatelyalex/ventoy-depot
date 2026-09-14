@@ -6,15 +6,58 @@ _MESSAGES = {
         "choose_device": "Choose a detected Ventoy drive.",
         "no_devices": "No mounted Ventoy drive found.",
         "refresh": "Refresh devices",
+        "manual_mount": "Choose mountpoint",
+        "manual_mount_title": "Choose a Ventoy mountpoint manually",
+        "manual_mount_warning": (
+            "Use this only when automatic device discovery misses an already mounted Ventoy "
+            "volume. The path is accepted only if it contains a Ventoy marker."
+        ),
+        "manual_mount_confirm": "Use Ventoy mountpoint",
+        "manual_mount_required": "Enter an absolute mounted-volume path.",
+        "manual_mount_selected": "Manually confirmed Ventoy mountpoint: {path}",
         "scan": "Scan ISOs",
         "check_updates": "Check updates",
         "update_selected": "Update selected",
+        "replace_old": "Replace old ISO",
+        "replace_unavailable": "The highlighted ISO cannot be replaced automatically.",
         "assign_iso": "Assign ISO",
+        "official_link": "Official Windows source",
+        "official_link_title": "Use an official Microsoft ISO",
+        "official_link_help": (
+            "Open {source}, select the same product, language and architecture, then paste "
+            "Microsoft's temporary ISO URL or an absolute path to an already downloaded ISO, "
+            "plus the complete SHA-256 shown by Microsoft."
+        ),
+        "prepare_official_link": "Validate and prepare plan",
+        "official_link_required": (
+            "An official HTTPS URL or local ISO path and SHA-256 are required."
+        ),
+        "official_link_windows_only": "Highlight a recognized Windows ISO first.",
+        "checking_official_link": "Validating the official Microsoft source and identity…",
+        "add_iso": "Add new ISO",
+        "add_title": "Add a new official ISO",
+        "add_help": (
+            "Choose the exact product variant. Ventoy Depot resolves and verifies the latest "
+            "matching official release before it writes anything."
+        ),
+        "prepare_add": "Prepare download plan",
+        "add_required": "Channel and architecture are required.",
+        "no_add_providers": "No downloadable providers are available.",
+        "resolving_new_iso": "Resolving the selected official ISO…",
+        "verify_iso": "Verify ISO",
+        "verifying_iso": "Hashing the highlighted ISO…",
+        "verify_missing": "The highlighted row has no existing local ISO.",
+        "verify_match": "VERIFIED: checksum matches the current official release.",
+        "verify_mismatch": "FAILED: checksum does not match the current official release.",
+        "verify_hash_only": (
+            "HASHED: no matching historical official checksum is available automatically."
+        ),
         "assign_title": "Assign highlighted ISO",
         "assign_help": (
             "Use this only for a renamed ISO from a supported product. The assignment is "
             "bound to this file's SHA-256; changing the file invalidates it."
         ),
+        "volume_id_hint": "Read-only ISO volume identifier: {volume_id}",
         "provider_product": "Product",
         "edition": "Edition (optional unless required by the product)",
         "flavor": "Flavor (optional)",
@@ -25,7 +68,7 @@ _MESSAGES = {
         "build_optional": "Build (optional)",
         "save_assignment": "Save assignment",
         "assignment_required": "Product, version, channel and architecture are required.",
-        "scan_before_assign": "Check updates first, then highlight an unknown ISO.",
+        "scan_before_assign": "Check updates first, then highlight an ISO.",
         "already_identified": "{name} is already identified automatically.",
         "saving_assignment": "Hashing the ISO and saving its assignment…",
         "assignment_saved": "Assignment saved; rebuilding the update plan…",
@@ -37,10 +80,24 @@ _MESSAGES = {
         "keep_old": (
             "Existing ISOs remain on the drive. New files become visible only after verification."
         ),
+        "replace_warning": (
+            "Items marked REPLACE move the old ISO to .ventoy-depot/trash only after the new "
+            "copy has been verified."
+        ),
         "start_updates": "Download and install",
         "cancel": "Cancel",
         "cancel_run": "Cancel update",
         "retry_failed": "Retry failed",
+        "empty_trash": "Empty trash",
+        "empty_trash_title": "Permanently empty Ventoy Depot trash",
+        "empty_trash_warning": (
+            "This permanently deletes {count} previously replaced ISO file(s) ({size}). "
+            "This cannot be undone."
+        ),
+        "empty_trash_confirm": "Permanently delete",
+        "empty_trash_empty": "The Ventoy Depot trash is empty.",
+        "emptying_trash": "Permanently deleting confirmed trash files…",
+        "trash_emptied": "Permanently deleted {count} file(s) from the Ventoy Depot trash.",
         "settings": "Settings",
         "settings_title": "Ventoy Depot settings",
         "language_setting": "Interface language",
@@ -58,6 +115,13 @@ _MESSAGES = {
         "cancelled": "Cancelled by the user.",
         "updating": "Downloading and verifying selected ISOs…",
         "run_finished": "Update run finished.",
+        "details": "ISO details",
+        "local_path": "Local path",
+        "provider_origin": "Provider / detection",
+        "official_source": "Official source",
+        "checksum": "Checksum",
+        "signature": "Signature fingerprints",
+        "warnings": "Warnings / blockers",
         "deprecated": "ventoy-iso-updater is deprecated; use ventoy-depot.",
     },
     "de": {
@@ -65,15 +129,61 @@ _MESSAGES = {
         "choose_device": "Wähle ein erkanntes Ventoy-Laufwerk.",
         "no_devices": "Kein eingehängtes Ventoy-Laufwerk gefunden.",
         "refresh": "Laufwerke suchen",
+        "manual_mount": "Mountpoint wählen",
+        "manual_mount_title": "Ventoy-Mountpoint manuell wählen",
+        "manual_mount_warning": (
+            "Nur verwenden, wenn die automatische Erkennung ein bereits eingehängtes "
+            "Ventoy-Laufwerk übersieht. Der Pfad wird nur mit Ventoy-Marker akzeptiert."
+        ),
+        "manual_mount_confirm": "Ventoy-Mountpoint verwenden",
+        "manual_mount_required": "Gib einen absoluten Pfad eines eingehängten Laufwerks ein.",
+        "manual_mount_selected": "Manuell bestätigter Ventoy-Mountpoint: {path}",
         "scan": "ISOs prüfen",
         "check_updates": "Updates prüfen",
         "update_selected": "Auswahl aktualisieren",
+        "replace_old": "Alte ISO ersetzen",
+        "replace_unavailable": "Die markierte ISO kann nicht automatisch ersetzt werden.",
         "assign_iso": "ISO zuordnen",
+        "official_link": "Offizielle Windows-Quelle",
+        "official_link_title": "Offizielle Microsoft-ISO verwenden",
+        "official_link_help": (
+            "Öffne {source}, wähle dasselbe Produkt, dieselbe Sprache und Architektur und füge "
+            "dann Microsofts temporäre ISO-URL oder den absoluten Pfad einer bereits geladenen "
+            "ISO sowie die vollständige dort angezeigte SHA-256 ein."
+        ),
+        "prepare_official_link": "Prüfen und Plan erstellen",
+        "official_link_required": (
+            "Offizielle HTTPS-URL oder lokaler ISO-Pfad und SHA-256 sind erforderlich."
+        ),
+        "official_link_windows_only": "Markiere zuerst eine erkannte Windows-ISO.",
+        "checking_official_link": "Offizielle Microsoft-Quelle und Identität werden geprüft…",
+        "add_iso": "Neue ISO hinzufügen",
+        "add_title": "Neue offizielle ISO hinzufügen",
+        "add_help": (
+            "Wähle die genaue Produktvariante. Ventoy Depot ermittelt und prüft das neueste "
+            "passende offizielle Release, bevor etwas geschrieben wird."
+        ),
+        "prepare_add": "Downloadplan erstellen",
+        "add_required": "Kanal und Architektur sind erforderlich.",
+        "no_add_providers": "Es sind keine herunterladbaren Provider verfügbar.",
+        "resolving_new_iso": "Die ausgewählte offizielle ISO wird ermittelt…",
+        "verify_iso": "ISO verifizieren",
+        "verifying_iso": "Die markierte ISO wird gehasht…",
+        "verify_missing": "Für die markierte Zeile existiert noch keine lokale ISO.",
+        "verify_match": "VERIFIZIERT: Prüfsumme entspricht dem aktuellen offiziellen Release.",
+        "verify_mismatch": (
+            "FEHLGESCHLAGEN: Prüfsumme entspricht nicht dem aktuellen offiziellen Release."
+        ),
+        "verify_hash_only": (
+            "GEHASHT: Eine passende historische offizielle Prüfsumme ist nicht automatisch "
+            "verfügbar."
+        ),
         "assign_title": "Markierte ISO zuordnen",
         "assign_help": (
             "Nur für eine umbenannte ISO eines unterstützten Produkts verwenden. Die Zuordnung "
             "wird an den SHA-256-Hash dieser Datei gebunden und bei Änderungen ungültig."
         ),
+        "volume_id_hint": "Read-only erkannte ISO-Datenträgerkennung: {volume_id}",
         "provider_product": "Produkt",
         "edition": "Edition (optional, sofern das Produkt sie nicht benötigt)",
         "flavor": "Variante (optional)",
@@ -84,7 +194,7 @@ _MESSAGES = {
         "build_optional": "Build (optional)",
         "save_assignment": "Zuordnung speichern",
         "assignment_required": "Produkt, Version, Kanal und Architektur sind erforderlich.",
-        "scan_before_assign": "Zuerst Updates prüfen und dann eine unbekannte ISO markieren.",
+        "scan_before_assign": "Zuerst Updates prüfen und dann eine ISO markieren.",
         "already_identified": "{name} wurde bereits automatisch erkannt.",
         "saving_assignment": "ISO wird gehasht und ihre Zuordnung gespeichert…",
         "assignment_saved": "Zuordnung gespeichert; Updateplan wird neu erstellt…",
@@ -96,10 +206,26 @@ _MESSAGES = {
         "keep_old": (
             "Bestehende ISOs bleiben erhalten. Neue Dateien werden erst nach der Prüfung sichtbar."
         ),
+        "replace_warning": (
+            "Bei REPLACE wird die alte ISO erst nach erfolgreicher Prüfung der neuen Kopie nach "
+            ".ventoy-depot/trash verschoben."
+        ),
         "start_updates": "Herunterladen und installieren",
         "cancel": "Abbrechen",
         "cancel_run": "Update abbrechen",
         "retry_failed": "Fehler erneut versuchen",
+        "empty_trash": "Papierkorb leeren",
+        "empty_trash_title": "Ventoy-Depot-Papierkorb endgültig leeren",
+        "empty_trash_warning": (
+            "Dadurch werden {count} zuvor ersetzte ISO-Datei(en) ({size}) endgültig gelöscht. "
+            "Dies kann nicht rückgängig gemacht werden."
+        ),
+        "empty_trash_confirm": "Endgültig löschen",
+        "empty_trash_empty": "Der Ventoy-Depot-Papierkorb ist leer.",
+        "emptying_trash": "Bestätigte Papierkorbdateien werden endgültig gelöscht…",
+        "trash_emptied": (
+            "{count} Datei(en) wurden endgültig aus dem Ventoy-Depot-Papierkorb gelöscht."
+        ),
         "settings": "Einstellungen",
         "settings_title": "Ventoy-Depot-Einstellungen",
         "language_setting": "Sprache der Oberfläche",
@@ -117,6 +243,13 @@ _MESSAGES = {
         "cancelled": "Vom Benutzer abgebrochen.",
         "updating": "Ausgewählte ISOs werden heruntergeladen und geprüft…",
         "run_finished": "Update-Lauf abgeschlossen.",
+        "details": "ISO-Details",
+        "local_path": "Lokaler Pfad",
+        "provider_origin": "Provider / Erkennung",
+        "official_source": "Offizielle Quelle",
+        "checksum": "Prüfsumme",
+        "signature": "Signatur-Fingerprints",
+        "warnings": "Warnungen / Blockaden",
         "deprecated": "ventoy-iso-updater ist veraltet; bitte ventoy-depot verwenden.",
     },
 }

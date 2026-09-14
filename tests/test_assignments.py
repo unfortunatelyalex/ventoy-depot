@@ -15,7 +15,8 @@ def test_assignment_is_bound_to_file_hash(tmp_path: Path) -> None:
     catalog.assign(iso, identity)
     assert catalog.lookup(iso) == identity
     iso.write_bytes(b"changed")
-    assert catalog.lookup(iso) is None
+    with pytest.raises(AssignmentError, match="assign it again"):
+        catalog.lookup(iso)
 
 
 def test_planner_uses_hash_bound_assignment(monkeypatch, tmp_path: Path) -> None:
@@ -68,6 +69,61 @@ def test_planner_uses_hash_bound_assignment(monkeypatch, tmp_path: Path) -> None
     )
     plan = build_plan(device)
     assert plan.items[0].local.identity == identity
+    assert plan.items[0].local.detection_source == "catalog-sha256"
+    assert plan.items[0].writable
+
+
+def test_hash_bound_assignment_overrides_filename_detection(monkeypatch, tmp_path: Path) -> None:
+    iso = tmp_path / "recognized.iso"
+    iso.write_bytes(b"iso")
+    detected_identity = IsoIdentity(
+        "test", "test-product", "legacy", None, "stable", "x86_64", None, "1", None
+    )
+    assigned_identity = IsoIdentity(
+        "test", "test-product", "current", None, "stable", "x86_64", None, "1", None
+    )
+    AssignmentCatalog(tmp_path).assign(iso, assigned_identity)
+    device = Device("id", "Ventoy", tmp_path, 100, 100, True, True)
+
+    class StubProvider:
+        def detect(self, path):
+            from ventoy_depot.models import DetectedIso
+
+            return DetectedIso(path, detected_identity, 0.98, "filename")
+
+        def resolve(self, assigned):
+            assert assigned == assigned_identity
+            from ventoy_depot.models import ReleaseArtifact
+
+            return ReleaseArtifact(
+                "2",
+                None,
+                "target.iso",
+                "https://example.test/target.iso",
+                1,
+                "sha256",
+                "a" * 64,
+                None,
+                (),
+                frozenset({"example.test"}),
+                IsoIdentity(
+                    "test", "test-product", "current", None, "stable", "x86_64", None, "2", None
+                ),
+            )
+
+        def is_newer(self, artifact, installed):
+            return True
+
+        def validate_binding(self, current, target):
+            assert current.variant_key() == target.variant_key()
+
+    monkeypatch.setattr(
+        "ventoy_depot.planner.provider_map", lambda **_kwargs: {"test": StubProvider()}
+    )
+
+    plan = build_plan(device)
+
+    assert plan.items[0].local.identity == assigned_identity
     assert plan.items[0].local.detection_source == "catalog-sha256"
     assert plan.items[0].writable
 

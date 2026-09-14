@@ -45,6 +45,7 @@ class SafeHttpClient:
     timeout: float = 30.0
     max_redirects: int = 5
     max_metadata_bytes: int = 8 * 1024 * 1024
+    metadata_attempts: int = 2
     user_agent: str = "ventoy-depot/0.2"
 
     def open(self, url: str, headers: dict[str, str] | None = None) -> HttpResponse:
@@ -71,8 +72,22 @@ class SafeHttpClient:
                 current = urljoin(current, location)
         raise urllib.error.URLError("Too many redirects")
 
-    def metadata(self, url: str) -> bytes:
-        response = self.open(url)
+    def metadata(self, url: str, headers: dict[str, str] | None = None) -> bytes:
+        for attempt in range(self.metadata_attempts):
+            try:
+                return self._metadata_once(url, headers)
+            except (TimeoutError, ConnectionError):
+                if attempt + 1 == self.metadata_attempts:
+                    raise
+            except urllib.error.HTTPError as error:
+                if error.code not in {408, 425, 429, 500, 502, 503, 504}:
+                    raise
+                if attempt + 1 == self.metadata_attempts:
+                    raise
+        raise RuntimeError("metadata retry loop ended unexpectedly")
+
+    def _metadata_once(self, url: str, headers: dict[str, str] | None = None) -> bytes:
+        response = self.open(url, headers) if headers is not None else self.open(url)
         try:
             try:
                 length = int(response.headers.get("Content-Length", 0))

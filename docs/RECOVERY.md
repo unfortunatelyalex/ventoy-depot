@@ -8,6 +8,13 @@
   resume. Its ETag or Last-Modified validator is stored beside it.
 - Explicitly replaced images are moved to `.ventoy-depot/trash`. Move the desired file
   back to its original directory while Ventoy Depot is not writing to the drive.
+- The TUI's separate **Empty trash** action permanently deletes only the files shown in
+  its confirmation dialog. Restore anything needed before confirming; deletion is irreversible.
+- If an interruption happens after the old same-named ISO was moved but before the new
+  ISO was published, the verified new file may remain as `<name>.partial` and the prior
+  image remains in `.ventoy-depot/trash`. Do not promote the partial file manually. With
+  Ventoy Depot closed, move the prior image back to its original directory, then create a
+  fresh update plan.
 - Never rename an unverified `.partial` or `.download` file to `.iso`.
 - If a drive was removed during copying, reconnect it, run `ventoy-depot verify PATH`,
   remove stale `.partial` files, and build a fresh plan.

@@ -1,5 +1,6 @@
 import urllib.error
 import urllib.request
+from http.client import RemoteDisconnected
 
 import pytest
 
@@ -66,3 +67,57 @@ def test_configured_proxy_is_used_only_for_https_requests(monkeypatch) -> None:
 
     proxy = next(item for item in captured if isinstance(item, urllib.request.ProxyHandler))
     assert proxy.proxies == {"https": "http://proxy.example:8080"}
+
+
+def test_metadata_retries_a_transient_read_timeout(monkeypatch) -> None:
+    class TimeoutResponse(FakeResponse):
+        def read(self, amount: int = -1) -> bytes:
+            raise TimeoutError("read timed out")
+
+    first = TimeoutResponse("4")
+    second = FakeResponse("4", b"data")
+    responses = iter((first, second))
+    monkeypatch.setattr(SafeHttpClient, "open", lambda self, url: next(responses))
+
+    result = SafeHttpClient(frozenset({"example.test"})).metadata("https://example.test/data")
+
+    assert result == b"data"
+    assert first.closed
+    assert second.closed
+
+
+def test_metadata_retries_a_remote_disconnect(monkeypatch) -> None:
+    response = FakeResponse("4", b"data")
+    attempts = 0
+
+    def open_with_disconnect(self, url):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RemoteDisconnected("server closed the connection")
+        return response
+
+    monkeypatch.setattr(SafeHttpClient, "open", open_with_disconnect)
+
+    result = SafeHttpClient(frozenset({"example.test"})).metadata("https://example.test/data")
+
+    assert result == b"data"
+    assert attempts == 2
+    assert response.closed
+
+
+def test_metadata_forwards_explicit_accept_header(monkeypatch) -> None:
+    response = FakeResponse("4", b"data")
+
+    def open_with_header(self, url, headers):
+        assert url == "https://example.test/asset"
+        assert headers == {"Accept": "application/octet-stream"}
+        return response
+
+    monkeypatch.setattr(SafeHttpClient, "open", open_with_header)
+    result = SafeHttpClient(frozenset({"example.test"})).metadata(
+        "https://example.test/asset", {"Accept": "application/octet-stream"}
+    )
+
+    assert result == b"data"
+    assert response.closed

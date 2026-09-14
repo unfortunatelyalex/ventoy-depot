@@ -6,9 +6,9 @@ Ventoy Depot is a Python 3.11+ TUI/CLI. Active code lives in `src/ventoy_depot/`
 `app.py` contains the Textual UI, `cli.py` the read-only CLI, `planner.py` builds update
 plans, and `transfer.py` performs verified transactional copies. Provider contracts and
 official-source resolvers live under `src/ventoy_depot/providers/`; the bundled manifest
-schema is in `src/ventoy_depot/registry/`. `src/ventoy_iso_updater/` is the deprecated
-compatibility package and should only receive compatibility fixes. Tests mirror behavior
-in `tests/test_*.py`. Security and recovery guidance belongs in `docs/`.
+schema is in `src/ventoy_depot/registry/`. The deprecated `ventoy-iso-updater` command
+delegates through `src/ventoy_depot/compat.py`; do not reintroduce the retired 0.1 package.
+Tests mirror behavior in `tests/test_*.py`. Security and recovery guidance belongs in `docs/`.
 
 ## Build, Test, and Development Commands
 

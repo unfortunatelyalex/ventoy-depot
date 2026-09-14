@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import bz2
+import gzip
 import hashlib
 import json
 import os
 import platform
+import re
 import shutil
+import stat
 import subprocess
 import tempfile
+import zipfile
 from collections.abc import Callable
 from pathlib import Path
 
@@ -31,6 +36,7 @@ class TransferCancelled(TransferError):
 
 Progress = Callable[[str, int, int], None]
 CancelCheck = Callable[[], bool]
+MAX_EXTRACTED_BYTES = 16 * 1024**3
 
 
 def apply_item(
@@ -54,15 +60,33 @@ def apply_item(
     else:
         device_root = device.mount_path.resolve(strict=True)
         _within(device_root, item.local.path)
+    if artifact.source_path is not None:
+        try:
+            artifact.source_path.resolve(strict=True).relative_to(device_root)
+        except ValueError:
+            pass
+        else:
+            raise TransferError("The imported source ISO must be outside the Ventoy drive.")
     destination = item.local.path.parent / safe_filename(artifact.filename)
     _within(device_root, destination)
-    if destination.exists():
+    same_file_replace = bool(
+        item.action == UpdateAction.REPLACE
+        and destination.exists()
+        and destination.resolve(strict=True) == item.local.path.resolve(strict=True)
+    )
+    if destination.exists() and not same_file_replace:
         raise TransferError(f"Target ISO already exists: {destination.name}")
+    original_signature = (
+        _file_signature(item.local.path) if item.action == UpdateAction.REPLACE else None
+    )
     revalidate_device(device)
-    required = artifact.size_bytes or 0
+    required = artifact.installed_size_bytes or 0
     if shutil.disk_usage(device_root).free < required:
         raise TransferError("Insufficient free space on the Ventoy drive.")
 
+    source_path = artifact.source_path
+    if source_path is not None and (source_path.is_symlink() or not source_path.is_file()):
+        raise TransferError("The imported source ISO is missing or is not a regular file.")
     client = SafeHttpClient(artifact.allowed_hosts, timeout=60)
     temporary_context = (
         tempfile.TemporaryDirectory(prefix="ventoy-depot-") if cache_dir is None else None
@@ -70,12 +94,25 @@ def apply_item(
     staging = Path(temporary_context.name) if temporary_context else cache_dir
     assert staging is not None
     staging.mkdir(parents=True, exist_ok=True)
-    downloaded = staging / f"{artifact.filename}.download"
+    download_filename = safe_filename(artifact.download_filename or artifact.filename)
+    downloaded = (
+        source_path.resolve(strict=True)
+        if source_path is not None
+        else staging / f"{download_filename}.download"
+    )
     partial = destination.with_name(f"{destination.name}.partial")
     checked_progress = _checked_progress(progress, cancelled)
+    extracted: Path | None = None
     try:
         _raise_if_cancelled(cancelled)
-        _download(client, artifact.download_url, downloaded, artifact.size_bytes, checked_progress)
+        if source_path is None:
+            _download(
+                client,
+                artifact.download_url,
+                downloaded,
+                artifact.size_bytes,
+                checked_progress,
+            )
         try:
             _verify(
                 downloaded,
@@ -86,14 +123,15 @@ def apply_item(
                 stage="download-verify",
             )
         except TransferError:
-            downloaded.unlink(missing_ok=True)
-            downloaded.with_suffix(downloaded.suffix + ".json").unlink(missing_ok=True)
+            if source_path is None:
+                downloaded.unlink(missing_ok=True)
+                downloaded.with_suffix(downloaded.suffix + ".json").unlink(missing_ok=True)
             raise
         if artifact.verification_level == VerificationLevel.SIGNED:
             if trusted_keyring is None:
                 raise TransferError("Signed artifact requires a trusted provider keyring.")
             assert artifact.signature_url is not None
-            signature_path = staging / f"{artifact.filename}.sig"
+            signature_path = staging / f"{download_filename}.sig"
             signature_path.write_bytes(client.metadata(artifact.signature_url))
             _verify_openpgp(
                 downloaded,
@@ -101,28 +139,72 @@ def apply_item(
                 trusted_keyring,
                 artifact.signer_fingerprints,
             )
+        copy_source = downloaded
+        copy_algorithm = artifact.checksum_algorithm
+        copy_checksum = artifact.checksum
+        if artifact.archive_format is not None:
+            extracted = _temporary_extracted_path(staging)
+            _extract_archive(
+                downloaded,
+                extracted,
+                artifact.archive_format,
+                artifact.archive_member,
+                artifact.filename,
+                artifact.extracted_size_bytes,
+                cancelled,
+                checked_progress,
+            )
+            copy_source = extracted
+            copy_algorithm = "sha256"
+            copy_checksum = _file_digest(extracted, "sha256", cancelled)
         _raise_if_cancelled(cancelled)
         revalidate_device(device)
-        if shutil.disk_usage(device_root).free < downloaded.stat().st_size:
+        if shutil.disk_usage(device_root).free < copy_source.stat().st_size:
             raise TransferError("Insufficient free space on the Ventoy drive before copying.")
-        _copy(downloaded, partial, checked_progress)
+        _copy(copy_source, partial, checked_progress)
         _verify(
             partial,
-            artifact.checksum_algorithm,
-            artifact.checksum,
+            copy_algorithm,
+            copy_checksum,
             cancelled=cancelled,
             progress=checked_progress,
             stage="copy-verify",
         )
         _raise_if_cancelled(cancelled)
         revalidate_device(device)
-        if destination.exists():
-            raise TransferError(f"Target ISO already exists: {destination.name}")
+        if original_signature is not None:
+            _require_unchanged(item.local.path, original_signature)
         _fsync_file(partial)
-        os.replace(partial, destination)
-        _fsync_directory(destination.parent)
-        if item.action == UpdateAction.REPLACE and item.local.path != destination:
-            _trash(item.local.path, device_root)
+        if same_file_replace:
+            assert original_signature is not None
+            _require_unchanged(item.local.path, original_signature)
+            trashed = _trash(item.local.path, device_root)
+            _fsync_directory(trashed.parent)
+            _fsync_directory(destination.parent)
+            try:
+                os.replace(partial, destination)
+            except Exception:
+                try:
+                    if trashed.exists() and not destination.exists():
+                        os.replace(trashed, destination)
+                        _fsync_directory(destination.parent)
+                except Exception as restore_error:
+                    raise TransferError(
+                        "The new ISO could not be published and the old ISO remains in "
+                        f"the Ventoy trash: {trashed}"
+                    ) from restore_error
+                raise
+            _fsync_directory(destination.parent)
+        else:
+            if destination.exists():
+                raise TransferError(f"Target ISO already exists: {destination.name}")
+            os.replace(partial, destination)
+            _fsync_directory(destination.parent)
+            if item.action == UpdateAction.REPLACE:
+                assert original_signature is not None
+                _require_unchanged(item.local.path, original_signature)
+                _trash(item.local.path, device_root)
+                _fsync_directory(item.local.path.parent)
         return destination
     except Exception:
         if partial.exists():
@@ -134,6 +216,8 @@ def apply_item(
                 partial.unlink(missing_ok=True)
         raise
     finally:
+        if extracted is not None:
+            extracted.unlink(missing_ok=True)
         if temporary_context is not None:
             temporary_context.cleanup()
 
@@ -174,17 +258,28 @@ def _download(
     response = client.open(url, headers)
     try:
         status = getattr(response, "status", 200)
+        current_validator = response.headers.get("ETag") or response.headers.get("Last-Modified")
+        if existing and status == 206 and current_validator and current_validator != validator:
+            target.unlink(missing_ok=True)
+            validator_path.unlink(missing_ok=True)
+            response.close()
+            return _download(client, url, target, expected_size, progress)
+        if status == 206:
+            range_start, range_total = _content_range(response.headers.get("Content-Range"))
+            if existing and range_start != existing:
+                target.unlink(missing_ok=True)
+                validator_path.unlink(missing_ok=True)
+                response.close()
+                return _download(client, url, target, expected_size, progress)
+            if not existing and range_start != 0:
+                raise TransferError("Server returned an unusable partial download response.")
+            if expected_size is not None and range_total not in {None, expected_size}:
+                raise TransferError("Download size does not match provider metadata.")
         mode = "ab" if existing and status == 206 else "wb"
         completed = existing if mode == "ab" else 0
         total = expected_size or completed + int(response.headers.get("Content-Length", 0))
         if total and shutil.disk_usage(target.parent).free < max(total - completed, 0):
             raise TransferError("Insufficient free space in the download staging directory.")
-        current_validator = response.headers.get("ETag") or response.headers.get("Last-Modified")
-        if mode == "ab" and current_validator and current_validator != validator:
-            target.unlink(missing_ok=True)
-            validator_path.unlink(missing_ok=True)
-            response.close()
-            return _download(client, url, target, expected_size, progress)
         if current_validator:
             validator_path.write_text(
                 json.dumps({"validator": current_validator}) + "\n", encoding="utf-8"
@@ -211,6 +306,19 @@ def _download(
         raise TransferError("Download size does not match provider metadata.")
 
 
+def _content_range(value: str | None) -> tuple[int, int | None]:
+    match = re.fullmatch(r"bytes (\d+)-(\d+)/(\d+|\*)", value or "")
+    if match is None:
+        return -1, None
+    start, end = int(match.group(1)), int(match.group(2))
+    if end < start:
+        return -1, None
+    total = None if match.group(3) == "*" else int(match.group(3))
+    if total is not None and end >= total:
+        return -1, None
+    return start, total
+
+
 def _load_download_validator(path: Path) -> str | None:
     try:
         value = json.loads(path.read_text(encoding="utf-8")).get("validator")
@@ -230,6 +338,142 @@ def _copy(source: Path, target: Path, progress: Progress | None) -> None:
                 progress("copy", completed, total)
         outgoing.flush()
         os.fsync(outgoing.fileno())
+
+
+def _temporary_extracted_path(staging: Path) -> Path:
+    descriptor, name = tempfile.mkstemp(prefix="ventoy-depot-", suffix=".iso", dir=staging)
+    os.close(descriptor)
+    path = Path(name)
+    path.unlink()
+    return path
+
+
+def _extract_archive(
+    source: Path,
+    target: Path,
+    archive_format: str,
+    archive_member: str | None,
+    expected_filename: str,
+    expected_size: int | None,
+    cancelled: CancelCheck | None,
+    progress: Progress | None,
+) -> None:
+    if safe_filename(
+        expected_filename
+    ) != expected_filename or not expected_filename.lower().endswith(".iso"):
+        raise TransferError("Archive output must be one safe ISO filename.")
+    if expected_size is not None and expected_size <= 0:
+        raise TransferError("Archive contains an invalid extracted size.")
+    available = shutil.disk_usage(target.parent).free
+    limit = min(available, MAX_EXTRACTED_BYTES)
+    if expected_size is not None:
+        if expected_size > limit:
+            raise TransferError("Insufficient space for the extracted ISO.")
+        limit = expected_size
+    try:
+        if archive_format == "zip":
+            _extract_zip(
+                source,
+                target,
+                archive_member,
+                expected_size,
+                limit,
+                cancelled,
+                progress,
+            )
+        elif archive_format in {"gzip", "bzip2"}:
+            if archive_member is not None:
+                raise TransferError("Single-stream archives cannot select a member.")
+            opener = gzip.open if archive_format == "gzip" else bz2.open
+            with opener(source, "rb") as incoming:
+                _extract_stream(incoming, target, expected_size, limit, cancelled, progress)
+        else:
+            raise TransferError(f"Unsupported archive format: {archive_format}")
+    except TransferError:
+        target.unlink(missing_ok=True)
+        raise
+    except (OSError, EOFError, zipfile.BadZipFile) as error:
+        target.unlink(missing_ok=True)
+        raise TransferError("Verified download is not a valid archive.") from error
+    except RuntimeError as error:
+        target.unlink(missing_ok=True)
+        raise TransferError("Archive could not be extracted safely.") from error
+    if expected_size is not None and target.stat().st_size != expected_size:
+        raise TransferError("Extracted ISO size does not match provider metadata.")
+
+
+def _extract_zip(
+    source: Path,
+    target: Path,
+    archive_member: str | None,
+    expected_size: int | None,
+    limit: int,
+    cancelled: CancelCheck | None,
+    progress: Progress | None,
+) -> None:
+    if archive_member is None:
+        raise TransferError("ZIP archive requires one exact ISO member.")
+    member_name = safe_filename(archive_member)
+    if not member_name.lower().endswith(".iso"):
+        raise TransferError("ZIP archive member must be an ISO file.")
+    with zipfile.ZipFile(source) as archive:
+        for info in archive.infolist():
+            normalized = info.filename.replace("\\", "/")
+            first_part = normalized.split("/", 1)[0]
+            if (
+                normalized.startswith("/")
+                or ":" in first_part
+                or any(part == ".." for part in normalized.split("/"))
+            ):
+                raise TransferError("Archive contains an unsafe path.")
+            mode = info.external_attr >> 16
+            if stat.S_ISLNK(mode):
+                raise TransferError("Archive contains a symbolic link.")
+        try:
+            member = archive.getinfo(member_name)
+        except KeyError as error:
+            raise TransferError("Expected ISO is missing from the archive.") from error
+        if member.is_dir() or member.flag_bits & 0x1:
+            raise TransferError("Expected ISO archive member is not a plain unencrypted file.")
+        if member.file_size > limit:
+            raise TransferError("Extracted ISO exceeds the safe size limit.")
+        if expected_size is not None and member.file_size != expected_size:
+            raise TransferError("Extracted ISO size does not match provider metadata.")
+        with archive.open(member) as incoming:
+            _extract_stream(
+                incoming, target, expected_size or member.file_size, limit, cancelled, progress
+            )
+
+
+def _extract_stream(
+    incoming: object,
+    target: Path,
+    expected_size: int | None,
+    limit: int,
+    cancelled: CancelCheck | None,
+    progress: Progress | None,
+) -> None:
+    completed = 0
+    with target.open("xb") as outgoing:
+        while block := incoming.read(1024 * 1024):  # type: ignore[attr-defined]
+            _raise_if_cancelled(cancelled)
+            completed += len(block)
+            if completed > limit:
+                raise TransferError("Extracted ISO exceeds the safe size limit.")
+            outgoing.write(block)
+            if progress:
+                progress("extract", completed, expected_size or 0)
+        outgoing.flush()
+        os.fsync(outgoing.fileno())
+
+
+def _file_digest(path: Path, algorithm: str, cancelled: CancelCheck | None = None) -> str:
+    digest = hashlib.new(algorithm)
+    with path.open("rb") as source:
+        for block in iter(lambda: source.read(1024 * 1024), b""):
+            _raise_if_cancelled(cancelled)
+            digest.update(block)
+    return digest.hexdigest()
 
 
 def _verify(
@@ -314,6 +558,64 @@ def _trash(path: Path, root: Path) -> Path:
         index += 1
     os.replace(path, candidate)
     return candidate
+
+
+def trash_entries(root: Path) -> tuple[Path, ...]:
+    """Return deletable trash files without creating metadata directories."""
+    resolved_root = root.resolve(strict=True)
+    metadata = resolved_root / ".ventoy-depot"
+    trash = metadata / "trash"
+    for directory in (metadata, trash):
+        if directory.is_symlink():
+            raise SecurityError("Symlinked trash directories are not allowed.")
+        if not directory.exists():
+            return ()
+        if not directory.is_dir():
+            raise SecurityError("Ventoy Depot trash path is not a directory.")
+        _within(resolved_root, directory)
+    entries: list[Path] = []
+    for entry in sorted(trash.iterdir(), key=lambda item: item.name.casefold()):
+        if entry.is_symlink():
+            raise SecurityError("Symlinked trash entries are not allowed.")
+        details = entry.stat(follow_symlinks=False)
+        if not stat.S_ISREG(details.st_mode):
+            raise SecurityError("Ventoy Depot trash contains a non-file entry.")
+        _within(resolved_root, entry)
+        entries.append(entry)
+    return tuple(entries)
+
+
+def empty_trash(device: Device, expected: tuple[Path, ...] | None = None) -> tuple[Path, ...]:
+    """Permanently remove only files already inside this revalidated device's trash."""
+    revalidate_device(device)
+    current = trash_entries(device.mount_path)
+    entries = current if expected is None else expected
+    if any(entry not in current for entry in entries):
+        raise TransferError("The confirmed trash contents changed before deletion.")
+    signatures = {entry: _file_signature(entry) for entry in entries}
+    for entry in entries:
+        revalidate_device(device)
+        _within(device.mount_path, entry)
+        _require_unchanged(entry, signatures[entry])
+        entry.unlink()
+        _fsync_directory(entry.parent)
+    return entries
+
+
+def _file_signature(path: Path) -> tuple[int, int, int, int]:
+    details = path.stat(follow_symlinks=False)
+    if not stat.S_ISREG(details.st_mode):
+        raise TransferError("The ISO selected for replacement is not a regular file.")
+    return details.st_dev, details.st_ino, details.st_size, details.st_mtime_ns
+
+
+def _require_unchanged(path: Path, expected: tuple[int, int, int, int]) -> None:
+    try:
+        actual = _file_signature(path)
+    except FileNotFoundError as error:
+        raise TransferError("The ISO selected for replacement disappeared.") from error
+    if actual != expected:
+        raise TransferError("The ISO selected for replacement changed during the update.")
 
 
 def _within(root: Path, path: Path) -> None:
