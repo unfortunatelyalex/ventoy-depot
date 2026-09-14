@@ -64,6 +64,16 @@ def test_assignment_profiles_use_supported_product_and_architecture_defaults() -
         "slackware-live",
         "x86_64",
     ]
+    assert profiles["Puppy Linux (PeaBee builds)"] == [
+        "puppy-peabee",
+        "puppy-linux",
+        "x86_64",
+    ]
+    assert profiles["Puppy Linux (PeaBee 32-bit)"] == [
+        "puppy-peabee",
+        "puppy-linux",
+        "i686",
+    ]
     assert profiles["openSUSE Leap"] == ["opensuse-leap", "opensuse-leap", "x86_64"]
     assert profiles["Kubuntu"] == ["ubuntu-flavors", "kubuntu", "amd64"]
     assert profiles["Ubuntu Unity"] == ["ubuntu-flavors", "ubuntu-unity", "amd64"]

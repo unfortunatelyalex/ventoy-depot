@@ -72,3 +72,8 @@ def test_version_fallback_orders_stable_after_release_candidate(monkeypatch) -> 
 
     monkeypatch.setattr(builtins, "__import__", without_packaging)
     assert is_newer_version("26.1.0", "26.1.0-rc3")
+
+
+def test_puppy_build_date_is_part_of_release_version() -> None:
+    assert is_newer_version("22.02-260902", "22.02-260801")
+    assert not is_newer_version("22.02-260801", "22.02-260902")

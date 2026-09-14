@@ -104,3 +104,20 @@ def test_metadata_retries_a_remote_disconnect(monkeypatch) -> None:
     assert result == b"data"
     assert attempts == 2
     assert response.closed
+
+
+def test_metadata_forwards_explicit_accept_header(monkeypatch) -> None:
+    response = FakeResponse("4", b"data")
+
+    def open_with_header(self, url, headers):
+        assert url == "https://example.test/asset"
+        assert headers == {"Accept": "application/octet-stream"}
+        return response
+
+    monkeypatch.setattr(SafeHttpClient, "open", open_with_header)
+    result = SafeHttpClient(frozenset({"example.test"})).metadata(
+        "https://example.test/asset", {"Accept": "application/octet-stream"}
+    )
+
+    assert result == b"data"
+    assert response.closed

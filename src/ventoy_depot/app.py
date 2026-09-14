@@ -315,6 +315,8 @@ _ASSIGNMENT_PROFILES = (
     ("Tsurugi Linux", "tsurugi-linux", "tsurugi-linux", "x86_64"),
     ("ArchBang", "archbang", "archbang", "x86_64"),
     ("Puppy Linux BookwormPup64", "puppy-linux", "puppy-linux", "x86_64"),
+    ("Puppy Linux (PeaBee builds)", "puppy-peabee", "puppy-linux", "x86_64"),
+    ("Puppy Linux (PeaBee 32-bit)", "puppy-peabee", "puppy-linux", "i686"),
     ("Bodhi Linux", "bodhi-linux", "bodhi-linux", "x86_64"),
     ("Bodhi Linux Legacy", "bodhi-linux", "bodhi-linux", "i386"),
     ("openmediavault", "openmediavault", "openmediavault", "amd64"),

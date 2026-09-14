@@ -60,7 +60,7 @@ Ubuntu Studio, Ubuntu Kylin, Debian, Devuan, Fedora
 Workstation/Server/KDE, Fedora CoreOS, Flatcar Container Linux, Alpine Linux, Chimera Linux, Rocky Linux, AlmaLinux, Oracle Linux, CentOS Stream,
 Linux Mint stable editions,
 EndeavourOS, CachyOS, Clonezilla, Gentoo, GhostBSD, GParted Live, Grml, Haiku,
-deepin, DRIFT Linux, FreeDOS, Garuda Linux, Harvester HCI, Hiren's BootCD PE, Kali Linux, Kaisen Linux, KaOS, KDE neon, Linux Lite, Memtest86+, OPNsense, Puppy Linux BookwormPup64, ReactOS, Security Onion, SparkyLinux, Talos Linux, Tsurugi Linux,
+deepin, DRIFT Linux, FreeDOS, Garuda Linux, Harvester HCI, Hiren's BootCD PE, Kali Linux, Kaisen Linux, KaOS, KDE neon, Linux Lite, Memtest86+, OPNsense, Puppy Linux BookwormPup64 and ten PeaBee community builds, ReactOS, Security Onion, SparkyLinux, Talos Linux, Tsurugi Linux,
 netboot.xyz, NixOS, SystemRescue, Super Grub2 Disk, ALT Rescue, Finnix, UrBackup Restore Stick,
 OpenBSD, openSUSE Leap, openSUSE Tumbleweed, FreeBSD, OpenIndiana Hipster, OmniOS, Omarchy, openmediavault, Parrot OS,
 Pop!_OS, Porteus, PorteuX, Mageia,

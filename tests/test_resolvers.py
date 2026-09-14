@@ -131,6 +131,96 @@ def test_slackware_live_resolver_rejects_other_channels() -> None:
         resolvers.resolve_release("slackware-live", identity)
 
 
+@pytest.mark.parametrize(
+    ("edition", "architecture", "prefix", "version"),
+    [
+        ("voidpup64", "x86_64", "VoidPup64", "22.02-260902"),
+        ("voidpup32", "i686", "VoidPup32", "22.02-260902"),
+        ("trixiepup64-wayland", "x86_64", "TrixiePup64-Wayland", "2606-260901"),
+        ("trixiepup64-retro", "x86_64", "TrixiePup64-Retro", "2509-260901"),
+        ("trixiepup32-retro", "i686", "TrixiePup32-Retro", "2508-260901"),
+        ("s15pup64", "x86_64", "S15Pup64", "22.12-260901"),
+        ("s15pup32", "i686", "S15Pup32", "22.12-260901"),
+        ("resolutepup64", "x86_64", "ResolutePup64", "26.04-260901"),
+        ("noblepup32", "i686", "NoblePup32", "24.04-260901"),
+        ("bookwormpup32", "i686", "BookwormPup32", "23.12-260901"),
+    ],
+)
+def test_peabee_puppy_resolver_preserves_each_build_and_sha512(
+    monkeypatch, edition: str, architecture: str, prefix: str, version: str
+) -> None:
+    filename = f"{prefix}-{version}.iso"
+    tag = f"{prefix}/release-{version.rsplit('-', 1)[1]}"
+    base = f"https://github.com/peabee/releases/releases/download/{tag}/"
+    digest = "b" * 128
+
+    class FakeClient:
+        def __init__(self, hosts: frozenset[str]) -> None:
+            assert "api.github.com" in hosts
+            assert "release-assets.githubusercontent.com" in hosts
+
+        def metadata(self, requested: str, headers: dict[str, str] | None = None) -> bytes:
+            if requested == "https://api.github.com/repos/peabee/releases/releases?per_page=100":
+                assert headers is None
+                return json.dumps(
+                    [
+                        {
+                            "tag_name": "VoidPup64/release-999999",
+                            "assets": [{"name": "VoidPup64-22.02-999999.iso"}],
+                        },
+                        {
+                            "tag_name": tag,
+                            "assets": [
+                                {"name": filename},
+                                {"name": "SHA512checksums.txt", "id": 42},
+                            ],
+                        },
+                    ]
+                ).encode()
+            assert requested == "https://api.github.com/repos/peabee/releases/releases/assets/42"
+            assert headers == {"Accept": "application/octet-stream"}
+            return f"{digest}  ./{filename}\n".encode()
+
+    monkeypatch.setattr(resolvers, "SafeHttpClient", FakeClient)
+    identity = IsoIdentity(
+        "puppy-peabee",
+        "puppy-linux",
+        edition,
+        None,
+        "stable",
+        architecture,
+        None,
+        version.rsplit("-", 1)[0] + "-260801",
+        None,
+    )
+
+    artifact = resolvers.resolve_release("puppy-peabee", identity)
+
+    assert artifact.version == version
+    assert artifact.filename == filename
+    assert artifact.download_url == base + filename
+    assert artifact.checksum_algorithm == "sha512"
+    assert artifact.checksum == digest
+    assert artifact.identity is not None
+    assert artifact.identity.variant_key() == identity.variant_key()
+
+
+def test_peabee_puppy_resolver_blocks_architecture_switch() -> None:
+    identity = IsoIdentity(
+        "puppy-peabee",
+        "puppy-linux",
+        "voidpup32",
+        None,
+        "stable",
+        "x86_64",
+        None,
+        "22.02-260801",
+        None,
+    )
+    with pytest.raises(resolvers.ProviderError, match="unsupported"):
+        resolvers.resolve_release("puppy-peabee", identity)
+
+
 def test_kaos_resolver_uses_official_dinit_mirror_and_embedded_sha256(monkeypatch) -> None:
     filename = "KaOS-DINIT-2026.06-x86_64.iso"
     url = f"https://kaosx-eu.yourhostingsolutions.com/{filename}"

@@ -161,6 +161,7 @@ BUILTIN_RESOLVER_IDS = frozenset(
         "openeuler",
         "trisquel",
         "slackware-live",
+        "puppy-peabee",
     }
 )
 
@@ -260,6 +261,7 @@ def resolve_release(provider_id: str, identity: IsoIdentity) -> ReleaseArtifact:
         "openeuler": _openeuler,
         "trisquel": _trisquel,
         "slackware-live": _slackware_live,
+        "puppy-peabee": _puppy_peabee,
     }
     try:
         resolver = resolvers[provider_id]
@@ -3472,6 +3474,88 @@ def _puppy_linux(identity: IsoIdentity) -> ReleaseArtifact:
         checksum,
         hosts,
     )
+
+
+def _puppy_peabee(identity: IsoIdentity) -> ReleaseArtifact:
+    variants = {
+        "voidpup64": ("VoidPup64", "x86_64"),
+        "voidpup32": ("VoidPup32", "i686"),
+        "trixiepup64-wayland": ("TrixiePup64-Wayland", "x86_64"),
+        "trixiepup64-retro": ("TrixiePup64-Retro", "x86_64"),
+        "trixiepup32-retro": ("TrixiePup32-Retro", "i686"),
+        "s15pup64": ("S15Pup64", "x86_64"),
+        "s15pup32": ("S15Pup32", "i686"),
+        "resolutepup64": ("ResolutePup64", "x86_64"),
+        "noblepup32": ("NoblePup32", "i686"),
+        "bookwormpup32": ("BookwormPup32", "i686"),
+    }
+    variant = variants.get(identity.edition or "")
+    if (
+        identity.product_id != "puppy-linux"
+        or variant is None
+        or identity.architecture != variant[1]
+        or identity.flavor is not None
+        or identity.channel != "stable"
+        or identity.language is not None
+    ):
+        raise ProviderError("This PeaBee Puppy Linux image variant is unsupported.")
+    prefix = variant[0]
+    hosts = {
+        "api.github.com",
+        "github.com",
+        "release-assets.githubusercontent.com",
+        "objects.githubusercontent.com",
+    }
+    client = SafeHttpClient(frozenset(hosts))
+    releases = json.loads(
+        _text(client, "https://api.github.com/repos/peabee/releases/releases?per_page=100")
+    )
+    if not isinstance(releases, list):
+        raise ProviderError("The official PeaBee release API returned invalid metadata.")
+    candidates: list[tuple[str, str, str, int]] = []
+    filename_expression = re.compile(rf"{re.escape(prefix)}-(\d+(?:\.\d+)*-\d{{6}})\.iso$")
+    tag_expression = re.compile(rf"{re.escape(prefix)}/release-\d{{6}}$")
+    for release in releases:
+        if not isinstance(release, dict) or release.get("draft") or release.get("prerelease"):
+            continue
+        tag = release.get("tag_name")
+        assets = release.get("assets")
+        if not isinstance(tag, str) or not tag_expression.fullmatch(tag):
+            continue
+        if not isinstance(assets, list):
+            continue
+        checksum_assets = [
+            asset
+            for asset in assets
+            if isinstance(asset, dict)
+            and asset.get("name") == "SHA512checksums.txt"
+            and type(asset.get("id")) is int
+            and asset["id"] > 0
+        ]
+        if len(checksum_assets) != 1:
+            continue
+        names = {
+            asset["name"]
+            for asset in assets
+            if isinstance(asset, dict) and isinstance(asset.get("name"), str)
+        }
+        for name in names:
+            if isinstance(name, str) and (match := filename_expression.fullmatch(name)):
+                candidates.append((match.group(1), tag, name, checksum_assets[0]["id"]))
+    if not candidates:
+        raise ProviderError("The official PeaBee releases contain no matching verified ISO.")
+    version, tag, filename, checksum_id = max(candidates, key=lambda item: _version_key(item[0]))
+    base = f"https://github.com/peabee/releases/releases/download/{tag}/"
+    sums = client.metadata(
+        f"https://api.github.com/repos/peabee/releases/releases/assets/{checksum_id}",
+        {"Accept": "application/octet-stream"},
+    ).decode("utf-8", errors="replace")
+    checksum = _checksum(
+        re.sub(r"(?m)^([A-Fa-f0-9]{128}\s+)\./", r"\1", sums),
+        filename,
+        "sha512",
+    )
+    return _artifact(identity, version, filename, base + filename, "sha512", checksum, hosts)
 
 
 def _bodhi_linux(identity: IsoIdentity) -> ReleaseArtifact:

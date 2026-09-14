@@ -2911,4 +2911,47 @@ BUILTIN_PROVIDERS: tuple[Provider, ...] = (
         ),
         ProviderCapabilities(("full",), ("x86_64",), (), ("stable",)),
     ),
+    FilenameProvider(
+        "puppy-peabee",
+        "Puppy Linux (PeaBee builds)",
+        (
+            FilenameRule(
+                re.compile(
+                    r"(?P<edition>VoidPup64|TrixiePup64-Wayland|TrixiePup64-Retro|"
+                    r"S15Pup64|ResolutePup64)-"
+                    r"(?P<version>\d+(?:\.\d+)*-\d{6})\.iso$",
+                    re.I,
+                ),
+                "puppy-linux",
+                default_architecture="x86_64",
+            ),
+            FilenameRule(
+                re.compile(
+                    r"(?P<edition>VoidPup32|TrixiePup32-Retro|S15Pup32|NoblePup32|"
+                    r"BookwormPup32)-"
+                    r"(?P<version>\d+(?:\.\d+)*-\d{6})\.iso$",
+                    re.I,
+                ),
+                "puppy-linux",
+                default_architecture="i686",
+            ),
+        ),
+        ProviderCapabilities(
+            (
+                "voidpup64",
+                "voidpup32",
+                "trixiepup64-wayland",
+                "trixiepup64-retro",
+                "trixiepup32-retro",
+                "s15pup64",
+                "s15pup32",
+                "resolutepup64",
+                "noblepup32",
+                "bookwormpup32",
+            ),
+            ("x86_64", "i686"),
+            (),
+            ("stable",),
+        ),
+    ),
 )

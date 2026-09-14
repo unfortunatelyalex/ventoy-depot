@@ -130,6 +130,41 @@ from ventoy_depot.providers.builtin import BUILTIN_PROVIDERS
         ("archbang-050926-x86_64.iso", "archbang", "desktop", "x86_64"),
         ("archbang-220826.iso", "archbang", "desktop", "x86_64"),
         ("BookwormPup64_10.0.12.iso", "puppy-linux", "bookwormpup64", "x86_64"),
+        ("VoidPup64-22.02-260902.iso", "puppy-peabee", "voidpup64", "x86_64"),
+        ("VoidPup32-22.02-260902.iso", "puppy-peabee", "voidpup32", "i686"),
+        (
+            "TrixiePup64-Wayland-2606-260901.iso",
+            "puppy-peabee",
+            "trixiepup64-wayland",
+            "x86_64",
+        ),
+        (
+            "TrixiePup64-Retro-2509-260901.iso",
+            "puppy-peabee",
+            "trixiepup64-retro",
+            "x86_64",
+        ),
+        (
+            "TrixiePup32-Retro-2508-260901.iso",
+            "puppy-peabee",
+            "trixiepup32-retro",
+            "i686",
+        ),
+        ("S15Pup64-22.12-260901.iso", "puppy-peabee", "s15pup64", "x86_64"),
+        ("S15Pup32-22.12-260901.iso", "puppy-peabee", "s15pup32", "i686"),
+        (
+            "ResolutePup64-26.04-260901.iso",
+            "puppy-peabee",
+            "resolutepup64",
+            "x86_64",
+        ),
+        ("NoblePup32-24.04-260901.iso", "puppy-peabee", "noblepup32", "i686"),
+        (
+            "BookwormPup32-23.12-260901.iso",
+            "puppy-peabee",
+            "bookwormpup32",
+            "i686",
+        ),
         ("bodhi-7.0.0-64.iso", "bodhi-linux", "standard", "x86_64"),
         ("bodhi-7.0.0-64-hwe.iso", "bodhi-linux", "hwe", "x86_64"),
         ("bodhi-7.0.0-64-s76.iso", "bodhi-linux", "s76", "x86_64"),
@@ -467,6 +502,20 @@ def test_slackware_live_does_not_misidentify_unversioned_or_non_iso_media(
     filename: str,
 ) -> None:
     provider = next(item for item in BUILTIN_PROVIDERS if item.provider_id == "slackware-live")
+    assert provider.detect(Path(filename)) is None
+
+
+@pytest.mark.parametrize(
+    "filename",
+    (
+        "BookwormPup64_10.0.12.iso",
+        "BookwormPup64-ghtest-10.0.12-260901.iso",
+        "TrixiePup64-11.4.iso",
+        "VoidPup32-22.02-260902.img",
+    ),
+)
+def test_peabee_provider_rejects_other_puppy_lines_and_non_iso_media(filename: str) -> None:
+    provider = next(item for item in BUILTIN_PROVIDERS if item.provider_id == "puppy-peabee")
     assert provider.detect(Path(filename)) is None
 
 
